@@ -7,7 +7,6 @@ import "swiper/css/effect-coverflow"
 import "swiper/css/pagination"
 import "swiper/css/navigation"
 
-import { SparklesIcon } from "lucide-react"
 import {
   Autoplay,
   EffectCoverflow,
@@ -15,7 +14,6 @@ import {
   Pagination,
 } from "swiper/modules"
 
-import { Badge } from "./badge"
 
 interface CarouselProps {
   images: { src: string; alt: string }[]
@@ -54,10 +52,10 @@ const CardCarousel: React.FC<CarouselProps> = ({
   `
 
   return (
-    <section className="w-full space-y-4 mt-15" >
+    <section className="w-full space-y-4 mt-15">
       <style>{swiperCss}</style>
 
-      <div className="mx-auto w-full max-w-4xl rounded-[24px] border border-black/5 p-2 shadow-sm md:rounded-t-[44px]">
+      <div className="w-full rounded-[24px] border border-black/5 p-2 shadow-sm md:rounded-t-[44px]">
         <div className="relative mx-auto flex w-full flex-col rounded-[24px] border border-black/5 bg-neutral-800/5 p-2 shadow-sm md:items-start md:gap-8 md:rounded-b-[20px] md:rounded-t-[40px] md:p-2">
           {/* Badge */}
           {/* <Badge
@@ -69,15 +67,12 @@ const CardCarousel: React.FC<CarouselProps> = ({
           </Badge> */}
 
           {/* Title & Description */}
-          <div className="flex flex-col justify-center pb-2 pl-4 pt-14 md:items-center">
-            <div className="flex gap-2">
-              <div>
-                <h3 className="text-5xl font-bold tracking-tight opacity-85">
-                  Gallery
-                </h3>
-                {/* <p>Seamless Images carousel animation.</p> */}
-              </div>
-            </div>
+          <div className="flex flex-col items-center justify-center pb-2 pt-2 w-full">
+            <h3 className="bg-gradient-to-r from-rose-600 to-pink-500 bg-clip-text text-2xl md:text-4xl font-bold text-transparent mt-8 text-center w-full">
+              Different attractions over World
+            </h3>
+
+            {/* <p>Seamless Images carousel animation.</p> */}
           </div>
 
           {/* Swiper Carousel */}
@@ -113,16 +108,16 @@ const CardCarousel: React.FC<CarouselProps> = ({
               >
                 {images.map((image, index) => (
                   <SwiperSlide key={index}>
-  <div className="aspect-[4/3] w-[300px] overflow-hidden rounded-xl">
-    <img
-      src={image.src}
-      width={500}
-      height={500}
-      className="h-full w-full object-cover rounded-xl"
-      alt={image.alt}
-    />
-  </div>
-</SwiperSlide>
+                    <div className="aspect-[4/3] w-full overflow-hidden rounded-xl">
+                      <img
+                        src={image.src}
+                        width={500}
+                        height={500}
+                        className="h-full w-full object-cover rounded-xl"
+                        alt={image.alt}
+                      />
+                    </div>
+                  </SwiperSlide>
                 ))}
               </Swiper>
             </div>
@@ -130,7 +125,7 @@ const CardCarousel: React.FC<CarouselProps> = ({
         </div>
       </div>
     </section>
-  )
+  );
 }
 
 export default CardCarousel;

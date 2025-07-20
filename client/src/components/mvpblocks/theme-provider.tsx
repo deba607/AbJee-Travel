@@ -35,18 +35,32 @@ export function ThemeProvider({
 
     root.classList.remove("light", "dark")
 
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light"
+    let mediaQuery: MediaQueryList | null = null;
+    let systemThemeListener: ((e: MediaQueryListEvent) => void) | null = null;
 
-      root.classList.add(systemTheme)
-      return
+    function applySystemTheme() {
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      root.classList.remove("light", "dark");
+      root.classList.add(systemTheme);
     }
 
-    root.classList.add(theme)
-  }, [theme])
+    if (theme === "system") {
+      applySystemTheme();
+      mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      systemThemeListener = () => {
+        applySystemTheme();
+      };
+      mediaQuery.addEventListener("change", systemThemeListener);
+    } else {
+      root.classList.add(theme);
+    }
+
+    return () => {
+      if (mediaQuery && systemThemeListener) {
+        mediaQuery.removeEventListener("change", systemThemeListener);
+      }
+    };
+  }, [theme]);
 
   const value = {
     theme,

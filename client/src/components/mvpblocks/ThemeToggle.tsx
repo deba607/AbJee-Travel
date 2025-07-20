@@ -1,5 +1,3 @@
-import React from 'react';
-
 export default function ThemeToggle() {
   const toggleTheme = () => {
     const html = document.documentElement;

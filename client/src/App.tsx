@@ -1,37 +1,28 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
 import Header1 from './components/mvpblocks/header-1'
-import React, { useEffect } from 'react';
-import ThemeToggle from './components/mvpblocks/ThemeToggle';
-import Globe1 from './components/mvpblocks/globe1'
 import SimplePricing from './components/mvpblocks/simple-pricing'
 import CardCarousel from "@/components/ui/card-carousel"
-import { Switch } from "@/components/ui/switch"
 import { FeatureBlock3 } from './components/mvpblocks/feature'
 import { ThemeProvider } from './components/mvpblocks/theme-provider'
-import { ModeToggle } from './components/mvpblocks/mode-toggle'
-import MultiStepForm from './components/ui/multi-step-form'
+import GradientTypewriter from './components/mvpblocks/gradient-typewriter'
 
 function App() {
-  const [count, setCount] = useState(0)
-  const [switchChecked, setSwitchChecked] = useState(false)
-
- useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
-    const html = document.documentElement;
-
-    if (savedTheme === 'dark') {
-      html.classList.add('dark');
-    } else {
-      html.classList.remove('dark');
-    }
-  }, []);
-
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <Header1 />
+      <GradientTypewriter/>
+      <section className="w-full">
+        <video
+          src="/video1.mp4" //add video link here..
+          className="w-full h-[60vw] max-h-[600px] object-cover pt-2"
+          autoPlay
+          loop
+          muted
+          controls
+        >
+          
+        </video>
+      </section>
  
       {/* <Globe1/> */}
       
@@ -51,7 +42,9 @@ function App() {
         showNavigation={true}
       />
       <FeatureBlock3/>
-      <SimplePricing/>
+      <div id="pricing">
+        <SimplePricing/>
+      </div>
       
     </ThemeProvider>
   );
