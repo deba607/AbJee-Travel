@@ -57,6 +57,17 @@ export default function Header1() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    if (showSignIn) {
+      document.body.classList.add('overflow-hidden');
+    } else {
+      document.body.classList.remove('overflow-hidden');
+    }
+    return () => {
+      document.body.classList.remove('overflow-hidden');
+    };
+  }, [showSignIn]);
+
   const headerVariants = {
     initial: { y: -100, opacity: 0 },
     animate: { y: 0, opacity: 1 },
@@ -200,6 +211,7 @@ export default function Header1() {
               <a
                 href="/signup"
                 className="inline-flex items-center space-x-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-2.5 font-medium text-white transition-all duration-200 hover:shadow-lg"
+                onClick={e => { e.preventDefault(); setShowSignIn(true); }}
               >
                 <span>Get Started</span>
                 <ArrowRight className="h-4 w-4" />
@@ -273,14 +285,14 @@ export default function Header1() {
                   <a
                     href="/login"
                     className="block w-full rounded-lg py-2.5 text-center font-medium text-foreground transition-colors duration-200 hover:bg-muted"
-                    onClick={() => setIsMobileMenuOpen(false)}
+                    onClick={e => { e.preventDefault(); setIsMobileMenuOpen(false); setShowSignIn(true); }}
                   >
                     Sign In
                   </a>
                   <a
                     href="/signup"
                     className="block w-full rounded-lg bg-gradient-to-r from-rose-500 to-rose-700 py-2.5 text-center font-medium text-white transition-all duration-200 hover:shadow-lg"
-                    onClick={() => setIsMobileMenuOpen(false)}
+                    onClick={e => { e.preventDefault(); setIsMobileMenuOpen(false); setShowSignIn(true); }}
                   >
                     Get Started
                   </a>
