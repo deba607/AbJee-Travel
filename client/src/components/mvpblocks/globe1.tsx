@@ -11,10 +11,12 @@ export default function Globe1() {
             </h1>
             {/* Normalized RGB values i.e (RGB or color / 255) */}
           <Earth
-  baseColor={[0.6, 1, 0.6]}        // soft light green
-  markerColor={[0.7, 1, 0.7]}      // slightly brighter markers
-  glowColor={[0.6, 1, 0.6]}        // gentle green glow
+  mapBrightness={5.5}
+  baseColor={[0.4, 0.6509, 1]}         // natural blue for oceans
+  markerColor={[0.05, 0.8, 0.2]}       // soft green for markers (land/forest tone)
+  glowColor={[0.2, 0.4, 0.9]}          // cool blue glow for atmosphere effect
 />
+
 
 
           </div>

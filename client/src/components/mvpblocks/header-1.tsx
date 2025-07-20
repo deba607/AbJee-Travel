@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ChevronDown, ArrowRight, Sparkles } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { ModeToggle } from './mode-toggle'
+import MultiStepForm from '../ui/multi-step-form'
 
 interface NavItem {
   name: string;
@@ -23,20 +25,20 @@ const navItems: NavItem[] = [
       {
         name: 'Hotel/Hostels',
         href: '/hotels',
-        description: 'Track your metrics',
+        description: 'Book Your Hotel Now',
       },
       {
         name: 'Tour Packages',
         href: '/tour_packages',
-        description: 'Manage your data',
+        description: 'Tour Packages with Customization',
       },
       { name: 'Bike/Car Rents', 
         href: '/bike_rents',
-         description: 'Generate insights' },
+         description: 'Book bike/car rent' },
     ],
   },
-  { name: 'Pricing', href: '/SimplePricing' },
   { name: 'About', href: '/about' },
+  { name: 'Pricing', href: '/SimplePricing' },
 ];
 
 export default function Header1() {
@@ -44,6 +46,7 @@ export default function Header1() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const { theme } = useTheme();
+  const [showSignIn, setShowSignIn] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -165,8 +168,9 @@ export default function Header1() {
 
           <div className="hidden items-center space-x-4 lg:flex">
             <a
-              href="/login"
+              href="#"
               className="font-medium text-foreground transition-colors duration-200 hover:text-rose-500"
+              onClick={e => { e.preventDefault(); setShowSignIn(true); }}
             >
               Sign In
             </a>
@@ -179,6 +183,7 @@ export default function Header1() {
                 <ArrowRight className="h-4 w-4" />
               </a>
             </motion.div>
+            <ModeToggle />
           </div>
 
           <motion.button
@@ -236,6 +241,19 @@ export default function Header1() {
           )}
         </AnimatePresence>
       </div>
+      {showSignIn && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6 relative w-full max-w-lg">
+            <button
+              className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 dark:hover:text-white"
+              onClick={() => setShowSignIn(false)}
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <MultiStepForm />
+          </div>
+        </div>
+      )}
     </motion.header>
   );
   

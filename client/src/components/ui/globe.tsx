@@ -18,15 +18,15 @@ interface EarthProps {
 }
 const Earth: React.FC<EarthProps> = ({
   className,
-  theta = 0.25,
-  dark = 1,
-  scale = 1.1,
-  diffuse = 1.2,
-  mapSamples = 40000,
-  mapBrightness = 6,
-  baseColor = [0.4, 0.6509, 1],
-  markerColor = [1, 0, 0],
-  glowColor = [0.2745, 0.5765, 0.898],
+  theta = 0.3,
+  dark = 0.3,
+  scale = 1.05,
+  diffuse = 1.4,
+  mapSamples = 50000,
+  mapBrightness = 5.5,
+  baseColor = [0.4, 0.6509, 1],         // natural ocean blue
+  markerColor = [0.05, 0.8, 0.2],       // green land markers
+  glowColor = [0.2, 0.4, 0.9],   
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
