@@ -5,6 +5,8 @@ import CardCarousel from "@/components/ui/card-carousel"
 import { FeatureBlock3 } from './components/mvpblocks/feature'
 import { ThemeProvider } from './components/mvpblocks/theme-provider'
 import GradientTypewriter from './components/mvpblocks/gradient-typewriter'
+import Faq3 from './components/mvpblocks/faq-3'
+import Footer4Col from './components/mvpblocks/footer-4col'
 
 function App() {
   return (
@@ -18,7 +20,7 @@ function App() {
           autoPlay
           loop
           muted
-          controls
+          // controls
         >
           
         </video>
@@ -45,7 +47,8 @@ function App() {
       <div id="pricing">
         <SimplePricing/>
       </div>
-      
+      <Faq3/>
+      <Footer4Col/>
     </ThemeProvider>
   );
 }
