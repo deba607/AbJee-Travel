@@ -17,7 +17,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Home', href: '/' },
-  { name: 'Features', href: '/' },
+  { name: 'Features', href: '#features' },
   {
     name: 'Booking',
     href: '/',
@@ -152,6 +152,7 @@ export default function Header1() {
                   >
                     <span>{item.name}</span>
                   </a>
+                
                 ) : (
                   <a
                     href={item.href}
@@ -163,6 +164,7 @@ export default function Header1() {
                     )}
                   </a>
                 )}
+                
 
                 {item.hasDropdown && (
                   <AnimatePresence>
