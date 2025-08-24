@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ChevronDown, ArrowRight, Sparkles } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { ModeToggle } from './mode-toggle'
 import MultiStepForm from '../ui/multi-step-form'
 import { animate } from 'framer-motion'
+import { useAuth } from '../../contexts/AuthContext';
 
 interface NavItem {
   name: string;
@@ -33,11 +35,12 @@ const navItems: NavItem[] = [
         href: '/',
         description: 'Tour Packages with Customization',
       },
-      { name: 'Bike/Car Rents', 
+      { name: 'Bike/Car Rents',
         href: '/',
          description: 'Book bike/car rent' },
     ],
   },
+  { name: 'Community', href: '/chat' },
   { name: 'About', href: '/' },
   { name: 'Pricing', href: '#pricing' },
 ];
@@ -48,6 +51,7 @@ export default function Header1() {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const { theme } = useTheme();
   const [showSignIn, setShowSignIn] = useState(false);
+  const { currentUser, logout } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -113,14 +117,14 @@ export default function Header1() {
             whileHover={{ scale: 1.05 }}
             transition={{ type: 'spring', stiffness: 400, damping: 10 }}
           >
-            <a href="/" className="flex items-center space-x-2">
+            <Link to="/" className="flex items-center space-x-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-rose-500 to-rose-700">
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
               <span className="bg-gradient-to-r from-rose-500 to-rose-700 bg-clip-text text-xl font-bold text-transparent">
                 ABjee Travel
               </span>
-            </a>
+            </Link>
           </motion.div>
 
           <nav className="hidden items-center space-x-8 lg:flex">
@@ -154,15 +158,15 @@ export default function Header1() {
                   </a>
                 
                 ) : (
-                  <a
-                    href={item.href}
+                  <Link
+                    to={item.href}
                     className="flex items-center space-x-1 font-medium text-foreground transition-colors duration-200 hover:text-rose-500"
                   >
                     <span>{item.name}</span>
                     {item.hasDropdown && (
                       <ChevronDown className="h-4 w-4 transition-transform duration-200" />
                     )}
-                  </a>
+                  </Link>
                 )}
                 
 
@@ -178,9 +182,9 @@ export default function Header1() {
                         transition={{ duration: 0.2 }}
                       >
                         {item.dropdownItems?.map((dropdownItem) => (
-                          <a
+                          <Link
                             key={dropdownItem.name}
-                            href={dropdownItem.href}
+                            to={dropdownItem.href}
                             className="block px-4 py-3 transition-colors duration-200 hover:bg-muted"
                           >
                             <div className="font-medium text-foreground">
@@ -191,7 +195,7 @@ export default function Header1() {
                                 {dropdownItem.description}
                               </div>
                             )}
-                          </a>
+                          </Link>
                         ))}
                       </motion.div>
                     )}
@@ -202,23 +206,53 @@ export default function Header1() {
           </nav>
 
           <div className="hidden items-center space-x-4 lg:flex">
-            <a
-              href="#"
-              className="font-medium text-foreground transition-colors duration-200 hover:text-rose-500"
-              onClick={e => { e.preventDefault(); setShowSignIn(true); }}
-            >
-              Sign In
-            </a>
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <a
-                href="/signup"
-                className="inline-flex items-center space-x-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-2.5 font-medium text-white transition-all duration-200 hover:shadow-lg"
-                onClick={e => { e.preventDefault(); setShowSignIn(true); }}
-              >
-                <span>Get Started</span>
-                <ArrowRight className="h-4 w-4" />
-              </a>
-            </motion.div>
+            {currentUser ? (
+              <>
+                <div className="flex items-center space-x-3">
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-foreground">
+                      {currentUser.displayName || currentUser.email}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Welcome back!</p>
+                  </div>
+                  {currentUser.photoURL ? (
+                    <img
+                      src={currentUser.photoURL}
+                      alt="Profile"
+                      className="w-8 h-8 rounded-full border-2 border-rose-500"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 bg-rose-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                      {(currentUser.displayName || currentUser.email || 'U').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => logout()}
+                  className="text-sm font-medium text-foreground transition-colors duration-200 hover:text-rose-500"
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/auth"
+                  className="font-medium text-foreground transition-colors duration-200 hover:text-rose-500"
+                >
+                  Sign In
+                </Link>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Link
+                    to="/auth"
+                    className="inline-flex items-center space-x-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-2.5 font-medium text-white transition-all duration-200 hover:shadow-lg"
+                  >
+                    <span>Get Started</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </motion.div>
+              </>
+            )}
             <ModeToggle />
           </div>
 
@@ -273,31 +307,66 @@ export default function Header1() {
                       {item.name}
                     </a>
                   ) : (
-                    <a
+                    <Link
                       key={item.name}
-                      href={item.href}
+                      to={item.href}
                       className="block px-4 py-3 font-medium text-foreground transition-colors duration-200 hover:bg-muted"
                       onClick={() => setIsMobileMenuOpen(false)}
                     >
                       {item.name}
-                    </a>
+                    </Link>
                   )
                 ))}
                 <div className="space-y-2 px-4 py-2">
-                  <a
-                    href="/login"
-                    className="block w-full rounded-lg py-2.5 text-center font-medium text-foreground transition-colors duration-200 hover:bg-muted"
-                    onClick={e => { e.preventDefault(); setIsMobileMenuOpen(false); setShowSignIn(true); }}
-                  >
-                    Sign In
-                  </a>
-                  <a
-                    href="/signup"
-                    className="block w-full rounded-lg bg-gradient-to-r from-rose-500 to-rose-700 py-2.5 text-center font-medium text-white transition-all duration-200 hover:shadow-lg"
-                    onClick={e => { e.preventDefault(); setIsMobileMenuOpen(false); setShowSignIn(true); }}
-                  >
-                    Get Started
-                  </a>
+                  {currentUser ? (
+                    <>
+                      <div className="flex items-center space-x-3 px-4 py-3 bg-muted rounded-lg">
+                        {currentUser.photoURL ? (
+                          <img
+                            src={currentUser.photoURL}
+                            alt="Profile"
+                            className="w-10 h-10 rounded-full border-2 border-rose-500"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-rose-500 rounded-full flex items-center justify-center text-white font-bold">
+                            {(currentUser.displayName || currentUser.email || 'U').charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium text-foreground">
+                            {currentUser.displayName || currentUser.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground">Welcome back!</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setIsMobileMenuOpen(false);
+                          logout();
+                        }}
+                        className="block w-full rounded-lg py-2.5 text-center font-medium text-foreground transition-colors duration-200 hover:bg-muted"
+                      >
+                        Sign Out
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <Link
+                        to="/auth"
+                        className="block w-full rounded-lg py-2.5 text-center font-medium text-foreground transition-colors duration-200 hover:bg-muted"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        Sign In
+                      </Link>
+                      <Link
+                        to="/auth"
+                        className="block w-full rounded-lg bg-gradient-to-r from-rose-500 to-rose-700 py-2.5 text-center font-medium text-white transition-all duration-200 hover:shadow-lg"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        Get Started
+                      </Link>
+                    </>
+                  )}
                 </div>
               </div>
             </motion.div>
