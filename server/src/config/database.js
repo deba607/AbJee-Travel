@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/abjee-travel';
+    const mongoUri = process.env.MONGODB_URI;
     console.log('🔄 Attempting to connect to MongoDB...');
 
     const conn = await mongoose.connect(mongoUri, {
@@ -31,8 +31,6 @@ const connectDB = async () => {
   } catch (error) {
     console.error('❌ Database connection failed:', error.message);
     console.log('💡 Please ensure MongoDB is running or check your connection string');
-    console.log('💡 For local setup: https://www.mongodb.com/try/download/community');
-    console.log('💡 For cloud setup: https://www.mongodb.com/cloud/atlas/register');
     process.exit(1);
   }
 };
