@@ -6,6 +6,7 @@ import LandingPage from './Pages/LandingPage'
 import ChatPage from './Pages/ChatPage';
 import AuthPage from './Pages/AuthPage';
 import ChatRoom from './components/chat/ChatRoom';
+import HotelBookings from './components/bookings/hotel_booking';
 import {BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom'
 
 
@@ -29,6 +30,7 @@ function App() {
                 <Link to="/chat">Go to Chat</Link>
               </div>
             } />
+            <Route path = '/hotel-bookings' element = {<HotelBookings/>}/>
             {/* <Route path="/about" element={<div><AboutPage /></div>} /> */}
             {/* <Route path="/contact" element={<ContactPage />} /> */}
           </Routes>
