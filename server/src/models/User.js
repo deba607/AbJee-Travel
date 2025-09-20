@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Password is required'],
     minlength: [8, 'Password must be at least 8 characters'],
-    select: false // Don't include password in queries by default
+    select: false
   },
   
   // Address Information
@@ -65,6 +65,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     maxlength: [500, 'Bio cannot exceed 500 characters'],
     default: ''
+  },
+  phone: String,
+  profileImage: String,
+  role: { 
+    type: String, 
+    enum: ['user', 'admin'], 
+    default: 'user' 
   },
   
   // Travel Preferences
@@ -113,19 +120,34 @@ const userSchema = new mongoose.Schema({
     default: true
   },
   
-  // Timestamps
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+  // Preferences
+  preferences: {
+    notifications: { 
+      type: Boolean, 
+      default: true 
+    },
+    theme: { 
+      type: String, 
+      enum: ['light', 'dark'], 
+      default: 'light' 
+    }
   }
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toJSON: { 
+    virtuals: true,
+    transform: function(doc, ret) {
+      delete ret.password;
+      return ret;
+    }
+  },
+  toObject: { 
+    virtuals: true,
+    transform: function(doc, ret) {
+      delete ret.password;
+      return ret;
+    }
+  }
 });
 
 // Indexes for better performance
@@ -171,9 +193,42 @@ userSchema.methods.canAccessPrivateChat = function() {
 };
 
 // Method to update last seen
-userSchema.methods.updateLastSeen = function() {
+userSchema.methods.updateLastSeen = async function() {
   this.lastSeen = new Date();
-  return this.save();
+  return this.save({ validateBeforeSave: false });
 };
 
-export default mongoose.model('User', userSchema);
+// Static method to find by credentials (email/username and password)
+userSchema.statics.findByCredentials = async function(emailOrUsername, password) {
+  const user = await this.findOne({
+    $or: [
+      { email: emailOrUsername.toLowerCase() },
+      { username: emailOrUsername }
+    ]
+  }).select('+password');
+
+  if (!user) {
+    throw new Error('Unable to login');
+  }
+
+  const isMatch = await user.comparePassword(password);
+  if (!isMatch) {
+    throw new Error('Unable to login');
+  }
+
+  return user;
+};
+
+// Method to generate auth token
+userSchema.methods.generateAuthToken = function() {
+  const user = this;
+  const token = jwt.sign(
+    { _id: user._id.toString() }, 
+    process.env.JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+  return token;
+};
+
+const User = mongoose.model('User', userSchema);
+export default User;

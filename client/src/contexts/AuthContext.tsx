@@ -15,7 +15,7 @@ interface AuthContextType {
   currentUser: any | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  signup: (email: string, password: string, additionalData?: any) => Promise<void>;
+  signup: (email: string, password: string, additionalData?: any) => Promise<{ success: boolean; user: any }>;
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
@@ -84,18 +84,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Sign up with email and password
-  const signup = async (email: string, password: string, additionalData?: any) => {
+const signup = async (email: string, password: string, additionalData?: any) => {
+  try {
+    // Input validation
+    if (!email || !password) {
+      throw new Error('Email and password are required');
+    }
+
+    // Create user with email and password
     const { user } = await createUserWithEmailAndPassword(auth, email, password);
     
     // Update display name if provided
     if (additionalData?.firstName && additionalData?.lastName) {
-      await updateProfile(user, {
-        displayName: `${additionalData.firstName} ${additionalData.lastName}`,
-      });
+      const displayName = `${additionalData.firstName} ${additionalData.lastName}`;
+      await updateProfile(user, { displayName });
+      additionalData.displayName = displayName;
     }
 
+    // Create user profile in Firestore
     await createUserProfile(user, additionalData);
-  };
+    
+    return { success: true, user };
+  } catch (error: any) {
+    console.error('Signup error:', error);
+    let errorMessage = 'Failed to create account. Please try again.';
+    
+    if (error.code === 'auth/email-already-in-use') {
+      errorMessage = 'This email is already registered. Please use a different email or sign in.';
+    } else if (error.code === 'auth/weak-password') {
+      errorMessage = 'Password should be at least 6 characters.';
+    } else if (error.code === 'auth/invalid-email') {
+      errorMessage = 'Please enter a valid email address.';
+    }
+    
+    throw new Error(errorMessage);
+  }
+};
 
   // Sign in with email and password
   const login = async (email: string, password: string) => {

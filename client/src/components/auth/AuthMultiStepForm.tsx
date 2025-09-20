@@ -225,42 +225,47 @@ export default function AuthMultiStepForm({
   };
 
   // Handle next step or final submission
-  const handleNextStep = async (data: any) => {
-    try {
-      setError('');
-      const updatedData = { ...formData, ...data };
-      setFormData(updatedData);
+const handleNextStep = async (data: any) => {
+  try {
+    setError('');
+    const updatedData = { ...formData, ...data };
+    setFormData(updatedData);
 
-      if (mode === 'login') {
-        // Handle login
-        setIsSubmitting(true);
-        await login(data.email, data.password);
-        setIsComplete(true);
-        if (onComplete) onComplete();
-      } else if (step < steps.length - 1) {
-        // Move to next step
-        setStep(step + 1);
-        reset(updatedData);
-      } else {
-        // Final step submission for signup
-        setIsSubmitting(true);
-        await signup(updatedData.email, updatedData.password, {
+    if (mode === 'login') {
+      setIsSubmitting(true);
+      await login(data.email, data.password);
+      setIsComplete(true);
+      if (onComplete) onComplete();
+    } else if (step < steps.length - 1) {
+      setStep(step + 1);
+      reset(updatedData);
+    } else {
+      setIsSubmitting(true);
+      // The signup function will throw an error with a specific message
+      await signup(
+        updatedData.email, 
+        updatedData.password, 
+        {
           firstName: updatedData.firstName,
           lastName: updatedData.lastName,
           address: updatedData.address,
           city: updatedData.city,
           zipCode: updatedData.zipCode,
           username: updatedData.username,
-        });
-        setIsComplete(true);
-        if (onComplete) onComplete();
-      }
-    } catch (error: any) {
-      setError(error.message || 'An error occurred');
-    } finally {
-      setIsSubmitting(false);
+        }
+      );
+      setIsComplete(true);
+      if (onComplete) onComplete();
     }
-  };
+  } catch (error: any) {
+    // This will catch and display the specific error message from signup
+    setError(error.message || 'Failed to create account. Please try again.');
+    console.error('Authentication error:', error);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
 
   // Handle previous step
   const handlePrevStep = () => {
