@@ -237,44 +237,30 @@ const handleNextStep = async (data: any) => {
       setIsComplete(true);
       if (onComplete) onComplete();
     } else if (step < steps.length - 1) {
-      // Move to next step
       setStep(step + 1);
       reset(updatedData);
     } else {
-      // Final step submission for signup
       setIsSubmitting(true);
-      try {
-        await signup(
-          updatedData.email, 
-          updatedData.password, 
-          {
-            firstName: updatedData.firstName,
-            lastName: updatedData.lastName,
-            address: updatedData.address,
-            city: updatedData.city,
-            zipCode: updatedData.zipCode,
-            username: updatedData.username,
-          }
-        );
-        setIsComplete(true);
-        if (onComplete) onComplete();
-      } catch (error: any) {
-        // Handle specific Firebase errors
-        let errorMessage = 'Failed to create account. Please try again.';
-        
-        if (error.code === 'auth/email-already-in-use') {
-          errorMessage = 'This email is already registered. Please use a different email or sign in.';
-        } else if (error.code === 'auth/weak-password') {
-          errorMessage = 'Password should be at least 6 characters.';
-        } else if (error.code === 'auth/invalid-email') {
-          errorMessage = 'Please enter a valid email address.';
+      // The signup function will throw an error with a specific message
+      await signup(
+        updatedData.email, 
+        updatedData.password, 
+        {
+          firstName: updatedData.firstName,
+          lastName: updatedData.lastName,
+          address: updatedData.address,
+          city: updatedData.city,
+          zipCode: updatedData.zipCode,
+          username: updatedData.username,
         }
-        
-        throw new Error(errorMessage);
-      }
+      );
+      setIsComplete(true);
+      if (onComplete) onComplete();
     }
   } catch (error: any) {
-    setError(error.message || 'An error occurred. Please try again.');
+    // This will catch and display the specific error message from signup
+    setError(error.message || 'Failed to create account. Please try again.');
+    console.error('Authentication error:', error);
   } finally {
     setIsSubmitting(false);
   }
