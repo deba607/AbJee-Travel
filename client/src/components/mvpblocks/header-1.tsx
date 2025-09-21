@@ -22,12 +22,12 @@ const navItems: NavItem[] = [
   { name: 'Features', href: '#features' },
   {
     name: 'Booking',
-    href: '/',
+    href: '',
     hasDropdown: true,
     dropdownItems: [
       {
         name: 'Hotel/Hostels',
-        href: '/',
+        href: '/hotel-bookings',
         description: 'Book Your Hotel Now',
       },
       {
