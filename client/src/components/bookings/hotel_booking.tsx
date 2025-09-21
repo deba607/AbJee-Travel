@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import Header1 from '../mvpblocks/header-1';
 import Footer4Col from '../mvpblocks/footer-4col';
+import { GroupToursPopup } from './GroupToursPopup';
 
 // --- TYPE DEFINITIONS ---
 interface TourPackage {
@@ -91,7 +93,7 @@ const trendingHolidays: TrendingHoliday[] = [
 // --- MAIN BOOKINGS COMPONENT ---
 export default function HotelBookings() {
   
-  
+  const [isGroupToursOpen, setIsGroupToursOpen] = useState(false);
   
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -125,23 +127,44 @@ export default function HotelBookings() {
 
         {/* Tour Categories Section */}
         <section className="py-16 bg-white">
-            <div className="container mx-auto px-4">
-                 <div className="text-center mb-12">
-                    <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800">Explore Tour Types</h2>
-                    <p className="text-gray-600 mt-2">Find the perfect journey that fits your style.</p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                    {tourCategories.map(category => (
-                        <div key={category.id} className="text-center p-6 border rounded-lg hover:shadow-xl hover:border-rose-500 transition-all duration-300">
-                           <div className="flex items-center justify-center h-16 w-16 mx-auto bg-fuchsia-100 text-fuchsia-600 rounded-full mb-4">
-                             {category.icon}
-                           </div>
-                           <h3 className="text-xl font-bold text-gray-800 mb-2">{category.name}</h3>
-                           <p className="text-gray-600">{category.description}</p>
-                        </div>
-                    ))}
-                </div>
+        <div className="container mx-auto px-4">
+            <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800">Explore Tour Types</h2>
+            <p className="text-gray-600 mt-2">Find the perfect journey that fits your style.</p>
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            {tourCategories.map(category => (
+                <motion.div
+                key={category.id}
+                whileHover={{ y: -5 }}
+                className="text-center p-6 border rounded-lg hover:shadow-xl hover:border-rose-500 transition-all duration-300 cursor-pointer"
+                onClick={() => {
+                    if (category.name === 'Group Tours') {
+                    setIsGroupToursOpen(true);
+                    }
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' && category.name === 'Group Tours') {
+                    setIsGroupToursOpen(true);
+                    }
+                }}
+                >
+                <div className="flex items-center justify-center h-16 w-16 mx-auto bg-fuchsia-100 text-fuchsia-600 rounded-full mb-4">
+                    {category.icon}
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">{category.name}</h3>
+                <p className="text-gray-600">{category.description}</p>
+                </motion.div>
+            ))}
+            </div>
+        </div>
+        
+        <GroupToursPopup 
+            isOpen={isGroupToursOpen} 
+            onClose={() => setIsGroupToursOpen(false)} 
+        />
         </section>
 
         {/* Popular Tours Section */}
