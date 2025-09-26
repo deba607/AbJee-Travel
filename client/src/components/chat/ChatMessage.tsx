@@ -1,8 +1,25 @@
 import React from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Heart, Reply, MoreHorizontal } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
+import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+
+import {
+  Heart,
+  Reply,
+  MoreHorizontal,
+  Trash,
+  Flag,
+  Shield,
+  Pin,
+} from 'lucide-react';
 
 interface User {
   id: string;
@@ -32,20 +49,42 @@ interface Message {
 }
 
 interface ChatMessageProps {
-  message: Message;
+  message: Message & {
+    isModerated?: boolean;
+    moderatedBy?: User;
+    moderationReason?: string;
+    reports?: Array<{
+      user: User;
+      reason: string;
+      description?: string;
+    }>;
+  };
   currentUserId: string;
   onReply?: (message: Message) => void;
   onReaction?: (messageId: string, emoji: string) => void;
+  onDelete?: (message: Message) => void;
+  onReport?: (message: Message) => void;
+  onModerate?: (message: Message) => void;
+  onPin?: (message: Message) => void;
+  userRole?: 'user' | 'moderator' | 'admin';
+  isPinned?: boolean;
 }
 
 const ChatMessage: React.FC<ChatMessageProps> = ({
   message,
   currentUserId,
   onReply,
-  onReaction
+  onReaction,
+  onDelete,
+  onReport,
+  onModerate,
+  onPin,
+  userRole = 'user',
+  isPinned = false
 }) => {
   const isOwnMessage = message.sender.id === currentUserId;
   const timeAgo = formatDistanceToNow(new Date(message.createdAt), { addSuffix: true });
+  const isModerator = userRole === 'moderator' || userRole === 'admin';
 
   const handleReaction = (emoji: string) => {
     if (onReaction) {
@@ -168,15 +207,57 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             >
               <Reply className="h-3 w-3" />
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2"
-            >
-              <MoreHorizontal className="h-3 w-3" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2"
+                >
+                  <MoreHorizontal className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align={isOwnMessage ? 'end' : 'start'}>
+                {(isOwnMessage || isModerator) && (
+                  <DropdownMenuItem onClick={() => onDelete?.(message)}>
+                    <Trash className="h-4 w-4 mr-2" />
+                    Delete message
+                  </DropdownMenuItem>
+                )}
+                {!isOwnMessage && (
+                  <DropdownMenuItem onClick={() => onReport?.(message)}>
+                    <Flag className="h-4 w-4 mr-2" />
+                    Report message
+                  </DropdownMenuItem>
+                )}
+                {isModerator && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => onModerate?.(message)}>
+                      <Shield className="h-4 w-4 mr-2" />
+                      Moderate
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onPin?.(message)}>
+                      <Pin className="h-4 w-4 mr-2" />
+                      {isPinned ? 'Unpin message' : 'Pin message'}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
+        {message.isModerated && (
+          <div className="mt-1 text-xs text-muted-foreground italic">
+            [Message moderated by {message.moderatedBy?.username}
+            {message.moderationReason && `: ${message.moderationReason}`}]
+          </div>
+        )}
+        {isPinned && (
+          <Badge variant="outline" className="mt-1">
+            <Pin className="h-3 w-3 mr-1" /> Pinned
+          </Badge>
+        )}
       </div>
     </div>
   );

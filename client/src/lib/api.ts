@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { RoomData } from '../types/chat';
 
 const API_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
 
@@ -49,12 +50,25 @@ export const authAPI = {
 
 // Chat API
 export const chatAPI = {
+  // Room Management
   getRooms: (params?: any) => api.get('/chat/rooms', { params }),
-  createRoom: (roomData: any) => api.post('/chat/rooms', roomData),
+  getPublicRooms: () => api.get('/chat/rooms/public'),
+  getMyRooms: () => api.get('/chat/rooms/my'),
+  createRoom: (roomData: RoomData) => api.post('/chat/rooms', roomData),
   getRoomDetails: (roomId: string) => api.get(`/chat/rooms/${roomId}`),
-  getMessages: (roomId: string, params?: any) => api.get(`/chat/rooms/${roomId}/messages`, { params }),
+  updateRoom: (roomId: string, updates: Partial<RoomData>) => api.patch(`/chat/rooms/${roomId}`, updates),
   joinRoom: (roomId: string) => api.post(`/chat/rooms/${roomId}/join`),
   leaveRoom: (roomId: string) => api.post(`/chat/rooms/${roomId}/leave`),
+  
+  // Messages
+  getMessages: (roomId: string, params?: any) => api.get(`/chat/rooms/${roomId}/messages`, { params }),
+  getPinnedMessages: (roomId: string) => api.get(`/chat/rooms/${roomId}/messages/pinned`),
+
+  // Moderation
+  addModerator: (roomId: string, userId: string) => api.post(`/chat/rooms/${roomId}/moderators`, { userId }),
+  removeModerator: (roomId: string, userId: string) => api.delete(`/chat/rooms/${roomId}/moderators/${userId}`),
+  banUser: (roomId: string, userId: string) => api.post(`/chat/rooms/${roomId}/ban`, { userId }),
+  unbanUser: (roomId: string, userId: string) => api.post(`/chat/rooms/${roomId}/unban`, { userId }),
 };
 
 // Travel Partners API

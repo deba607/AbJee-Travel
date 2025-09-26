@@ -179,6 +179,56 @@ class SocketService {
     }
   }
 
+  // Moderation methods
+  deleteMessage(messageId: string) {
+    if (this.socket) {
+      this.socket.emit('delete_message', { messageId });
+    }
+  }
+
+  reportMessage(messageId: string, reason: string, description?: string) {
+    if (this.socket) {
+      this.socket.emit('report_message', { messageId, reason, description });
+    }
+  }
+
+  moderateMessage(messageId: string, reason: string) {
+    if (this.socket) {
+      this.socket.emit('moderate_message', { messageId, reason });
+    }
+  }
+
+  togglePinMessage(messageId: string) {
+    if (this.socket) {
+      this.socket.emit('toggle_pin_message', { messageId });
+    }
+  }
+
+  // Moderation event listeners
+  onMessageDeleted(callback: (data: any) => void) {
+    if (this.socket) {
+      this.socket.on('message_deleted', callback);
+    }
+  }
+
+  onMessageModerated(callback: (data: any) => void) {
+    if (this.socket) {
+      this.socket.on('message_moderated', callback);
+    }
+  }
+
+  onMessagePinToggled(callback: (data: any) => void) {
+    if (this.socket) {
+      this.socket.on('message_pin_toggled', callback);
+    }
+  }
+
+  onNewReport(callback: (data: any) => void) {
+    if (this.socket) {
+      this.socket.on('new_report', callback);
+    }
+  }
+
   // Remove event listeners
   off(event: string, callback?: Function) {
     if (this.socket) {

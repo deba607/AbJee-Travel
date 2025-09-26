@@ -8,6 +8,7 @@ import { ArrowLeft, Users, Settings, Crown } from 'lucide-react';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import TypingIndicator from './TypingIndicator';
+import ModerationDialog from './ModerationDialog';
 import { chatAPI } from '@/lib/api';
 import socketService from '@/lib/socket';
 
@@ -18,6 +19,7 @@ interface User {
   lastName: string;
   avatar?: string;
   isOnline?: boolean;
+  role?: 'user' | 'moderator' | 'admin';
 }
 
 interface Message {
@@ -61,6 +63,17 @@ const ChatRoom: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [typingUsers, setTypingUsers] = useState<User[]>([]);
+  const [userRole, setUserRole] = useState<'user' | 'moderator' | 'admin'>('user');
+  const [pinnedMessages, setPinnedMessages] = useState<string[]>([]);
+  const [moderationDialog, setModerationDialog] = useState<{
+    type: 'report' | 'moderate';
+    isOpen: boolean;
+    messageId: string | null;
+  }>({
+    type: 'report',
+    isOpen: false,
+    messageId: null
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 
@@ -77,6 +90,16 @@ const ChatRoom: React.FC = () => {
       }
     };
   }, [roomId]);
+
+  // Set user role based on room data
+  useEffect(() => {
+    if (room && room.onlineMembers) {
+      const userMember = room.onlineMembers.find(m => m.id === currentUser.id);
+      if (userMember?.role === 'admin' || userMember?.role === 'moderator') {
+        setUserRole(userMember.role);
+      }
+    }
+  }, [room]);
 
   useEffect(() => {
     scrollToBottom();
@@ -118,6 +141,12 @@ const ChatRoom: React.FC = () => {
     socketService.onUserStoppedTyping(handleUserStoppedTyping);
     socketService.onUserStatusChange(handleUserStatusChange);
     socketService.onReactionAdded(handleReactionAdded);
+    
+    // Moderation event listeners
+    socketService.onMessageDeleted(handleMessageDeleted);
+    socketService.onMessageModerated(handleMessageModerated);
+    socketService.onMessagePinToggled(handleMessagePinToggled);
+    socketService.onNewReport(handleNewReport);
   };
 
   const cleanupSocketListeners = () => {
@@ -128,6 +157,10 @@ const ChatRoom: React.FC = () => {
     socketService.off('user_stopped_typing');
     socketService.off('user_status_change');
     socketService.off('reaction_added');
+    socketService.off('message_deleted');
+    socketService.off('message_moderated');
+    socketService.off('message_pin_toggled');
+    socketService.off('new_report');
   };
 
   const handleNewMessage = (message: Message) => {
@@ -258,6 +291,90 @@ const ChatRoom: React.FC = () => {
     }
   };
 
+  // Moderation handlers
+  const handleMessageDeleted = (data: any) => {
+    setMessages(prev => 
+      prev.map(msg => 
+        msg.id === data.messageId 
+          ? { ...msg, isDeleted: true, deletedBy: data.deletedBy }
+          : msg
+      )
+    );
+  };
+
+  const handleMessageModerated = (data: any) => {
+    setMessages(prev => 
+      prev.map(msg => 
+        msg.id === data.messageId 
+          ? { 
+              ...msg, 
+              isModerated: true, 
+              moderatedBy: data.moderatedBy,
+              moderationReason: data.reason,
+              content: '[Message moderated]'
+            }
+          : msg
+      )
+    );
+  };
+
+  const handleMessagePinToggled = (data: any) => {
+    if (data.isPinned) {
+      setPinnedMessages(prev => [...prev, data.messageId]);
+    } else {
+      setPinnedMessages(prev => prev.filter(id => id !== data.messageId));
+    }
+  };
+
+  const handleNewReport = (data: any) => {
+    if (userRole === 'moderator' || userRole === 'admin') {
+      // Show notification to moderators
+      console.log('New report:', data);
+      // TODO: Implement moderation notification UI
+    }
+  };
+
+  // Message action handlers
+  const handleDeleteMessage = (message: Message) => {
+    socketService.deleteMessage(message.id);
+  };
+
+  const handleReportMessage = (message: Message) => {
+    setModerationDialog({
+      type: 'report',
+      isOpen: true,
+      messageId: message.id
+    });
+  };
+
+  const handleModerateMessage = (message: Message) => {
+    setModerationDialog({
+      type: 'moderate',
+      isOpen: true,
+      messageId: message.id
+    });
+  };
+
+  const handleModerationSubmit = (reason: string, details?: string) => {
+    if (!moderationDialog.messageId) return;
+
+    if (moderationDialog.type === 'report') {
+      socketService.reportMessage(moderationDialog.messageId, reason, details);
+    } else {
+      socketService.moderateMessage(moderationDialog.messageId, reason);
+    }
+
+    setModerationDialog({
+      type: 'report',
+      isOpen: false,
+      messageId: null
+    });
+  };
+
+  const handlePinMessage = (message: Message) => {
+    socketService.togglePinMessage(message.id);
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -351,6 +468,12 @@ const ChatRoom: React.FC = () => {
               currentUserId={currentUser.id}
               onReply={handleReply}
               onReaction={handleReaction}
+              onDelete={handleDeleteMessage}
+              onReport={handleReportMessage}
+              onModerate={handleModerateMessage}
+              onPin={handlePinMessage}
+              userRole={userRole}
+              isPinned={pinnedMessages.includes(message.id)}
             />
           ))}
           
@@ -370,6 +493,14 @@ const ChatRoom: React.FC = () => {
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
         placeholder={`Message ${room.name}...`}
+      />
+
+      {/* Moderation Dialog */}
+      <ModerationDialog
+        isOpen={moderationDialog.isOpen}
+        onClose={() => setModerationDialog(prev => ({ ...prev, isOpen: false }))}
+        onSubmit={handleModerationSubmit}
+        type={moderationDialog.type}
       />
     </div>
   );

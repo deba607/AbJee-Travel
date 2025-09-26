@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/components/ui/use-toast';
+import CreateRoomDialog from '@/components/chat/CreateRoomDialog';
 import { 
   MessageCircle, 
   Plus, 
@@ -20,6 +22,7 @@ import { chatAPI } from '@/lib/api';
 import socketService from '@/lib/socket';
 import Header from '@/components/mvpblocks/header-1';
 import { useAuth } from '@/contexts/AuthContext';
+import type { RoomData } from '@/types/chat';
 
 interface Room {
   id: string;
@@ -50,6 +53,7 @@ const ChatPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('public');
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const { currentUser } = useAuth();
 
   // Check if we're in a specific room
@@ -156,8 +160,24 @@ const ChatPage: React.FC = () => {
   };
 
   const handleCreateRoom = () => {
-    // Navigate to create room page or open modal
-    navigate('/chat/create-room');
+    if (!currentUser) {
+      alert('Please login to create a chat room');
+      navigate('/auth');
+      return;
+    }
+    setCreateDialogOpen(true);
+  };
+
+  const handleCreateRoomSubmit = async (roomData: RoomData) => {
+    try {
+      const response = await chatAPI.createRoom(roomData);
+      const newRoom = response.data.data.room;
+      setRooms(prev => [newRoom, ...prev]);
+      navigate(`/chat/room/${newRoom.id}`);
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      alert('Failed to create room. Please try again.');
+    }
   };
 
   const filteredRooms = rooms.filter(room =>
@@ -311,6 +331,13 @@ const ChatPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Navigation Header */}
       <Header />
+
+      {/* Create Room Dialog */}
+      <CreateRoomDialog
+        isOpen={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        onSubmit={handleCreateRoomSubmit}
+      />
 
       {/* Header Section */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
