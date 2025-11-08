@@ -1,38 +1,46 @@
-import mongoose from 'mongoose';
+import admin from './firebase-admin.js';
 
-const connectDB = async () => {
+const initializeFirestore = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URI;
-    console.log('🔄 Attempting to connect to MongoDB...');
+    console.log('🔄 Initializing Firestore...');
 
-    const conn = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+    // Get Firestore instance
+    const db = admin.firestore();
+    
+    // Configure Firestore settings
+    db.settings({
+      ignoreUndefinedProperties: true,
     });
 
-    console.log(`📦 MongoDB Connected: ${conn.connection.host}`);
+    console.log('✅ Firestore initialized successfully');
+    console.log('📦 Database: Firebase Firestore');
 
-    // Handle connection events
-    mongoose.connection.on('error', (err) => {
-      console.error('❌ MongoDB connection error:', err);
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      console.log('📦 MongoDB disconnected');
-    });
+    // Test connection by writing a test document
+    try {
+      await db.collection('_health').doc('check').set({
+        status: 'connected',
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log('✅ Firestore connection test successful');
+    } catch (testError) {
+      console.warn('⚠️ Firestore connection test failed:', testError.message);
+    }
 
     // Graceful shutdown
     process.on('SIGINT', async () => {
-      await mongoose.connection.close();
-      console.log('📦 MongoDB connection closed through app termination');
+      console.log('📦 Firestore connection closed through app termination');
       process.exit(0);
     });
 
+    return db;
+
   } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
-    console.log('💡 Please ensure MongoDB is running or check your connection string');
+    console.error('❌ Firestore initialization failed:', error.message);
+    console.log('💡 Please ensure Firebase Admin SDK is properly configured');
     process.exit(1);
   }
 };
 
-export default connectDB;
+export default initializeFirestore;
+export const db = admin.firestore();
+export { admin };

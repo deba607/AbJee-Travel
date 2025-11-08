@@ -47,12 +47,8 @@ const CreateRoomDialog: React.FC<CreateRoomDialogProps> = ({
     name: '',
     description: '',
     type: 'public',
-    destination: {
-      country: '',
-      city: '',
-      region: ''
-    }
-  } as RoomData);
+    destination: undefined
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,11 +70,7 @@ const CreateRoomDialog: React.FC<CreateRoomDialogProps> = ({
       name: '',
       description: '',
       type: 'public',
-      destination: {
-        country: '',
-        city: '',
-        region: ''
-      }
+      destination: undefined
     });
     onClose();
   };
@@ -88,14 +80,21 @@ const CreateRoomDialog: React.FC<CreateRoomDialogProps> = ({
   ) => {
     const { name, value } = e.target;
     if (name.startsWith('destination.')) {
-      const field = name.split('.')[1];
-      setFormData(prev => ({
-        ...prev,
-        destination: {
-          ...prev.destination,
-          [field]: value
-        }
-      }));
+      const field = name.split('.')[1] as 'country' | 'city' | 'region';
+      setFormData(prev => {
+        const newDestination = {
+          country: prev.destination?.country || '',
+          city: prev.destination?.city || '',
+          region: prev.destination?.region || ''
+        };
+        newDestination[field] = value;
+        
+        // Only include destination if country has a value
+        return {
+          ...prev,
+          destination: newDestination.country ? newDestination : undefined
+        };
+      });
     } else {
       setFormData(prev => ({
         ...prev,
@@ -167,9 +166,10 @@ const CreateRoomDialog: React.FC<CreateRoomDialogProps> = ({
                 <Input
                   id="country"
                   name="destination.country"
-                  value={formData.destination?.country}
+                  value={formData.destination?.country || ''}
                   onChange={handleInputChange}
                   placeholder="Country"
+                  required={formData.type === 'travel_partner'}
                 />
               </div>
               <div className="space-y-2">
@@ -177,7 +177,7 @@ const CreateRoomDialog: React.FC<CreateRoomDialogProps> = ({
                 <Input
                   id="city"
                   name="destination.city"
-                  value={formData.destination?.city}
+                  value={formData.destination?.city || ''}
                   onChange={handleInputChange}
                   placeholder="City"
                 />
@@ -187,7 +187,7 @@ const CreateRoomDialog: React.FC<CreateRoomDialogProps> = ({
                 <Input
                   id="region"
                   name="destination.region"
-                  value={formData.destination?.region}
+                  value={formData.destination?.region || ''}
                   onChange={handleInputChange}
                   placeholder="Region (optional)"
                 />

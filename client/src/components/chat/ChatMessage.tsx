@@ -82,8 +82,40 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   userRole = 'user',
   isPinned = false
 }) => {
-  const isOwnMessage = message.sender.id === currentUserId;
-  const timeAgo = formatDistanceToNow(new Date(message.createdAt), { addSuffix: true });
+  const isOwnMessage = message.sender?.id === currentUserId;
+  
+  // Safely parse and format the timestamp
+  let timeAgo = '';
+  try {
+    if (message.createdAt) {
+      let timestamp: Date;
+      
+      // Check if it's a Firestore Timestamp object
+      if (typeof message.createdAt === 'object' && '_seconds' in message.createdAt) {
+        // Convert Firestore Timestamp to JavaScript Date
+        const seconds = (message.createdAt as any)._seconds;
+        const nanoseconds = (message.createdAt as any)._nanoseconds || 0;
+        timestamp = new Date(seconds * 1000 + nanoseconds / 1000000);
+      } else {
+        // Try to parse as regular date string
+        timestamp = new Date(message.createdAt);
+      }
+      
+      if (!isNaN(timestamp.getTime())) {
+        timeAgo = formatDistanceToNow(timestamp, { 
+          addSuffix: true,
+          includeSeconds: true 
+        });
+      } else {
+        console.warn('Invalid timestamp for message:', message.id, message.createdAt);
+        timeAgo = 'just now';
+      }
+    }
+  } catch (error) {
+    console.error('Error formatting timestamp:', error, message.createdAt);
+    timeAgo = 'just now';
+  }
+  
   const isModerator = userRole === 'moderator' || userRole === 'admin';
 
   const handleReaction = (emoji: string) => {
@@ -112,9 +144,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     <div className={`flex gap-3 p-3 hover:bg-muted/50 group ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
       {/* Avatar */}
       <Avatar className="h-8 w-8 flex-shrink-0">
-        <AvatarImage src={message.sender.avatar} />
+        <AvatarImage src={message.sender?.avatar} />
         <AvatarFallback>
-          {message.sender.firstName[0]}{message.sender.lastName[0]}
+          {message.sender?.firstName?.[0] || '?'}{message.sender?.lastName?.[0] || '?'}
         </AvatarFallback>
       </Avatar>
 
@@ -123,12 +155,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         {/* Header */}
         <div className={`flex items-center gap-2 mb-1 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
           <span className="font-medium text-sm">
-            {message.sender.firstName} {message.sender.lastName}
+            {message.sender?.firstName || 'Unknown'} {message.sender?.lastName || 'User'}
           </span>
           <span className="text-xs text-muted-foreground">
             {timeAgo}
           </span>
-          {message.sender.isOnline && (
+          {message.sender?.isOnline && (
             <div className="w-2 h-2 bg-green-500 rounded-full"></div>
           )}
         </div>
@@ -137,7 +169,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         {message.replyTo && (
           <div className={`mb-2 p-2 border-l-2 border-primary/20 bg-muted/30 rounded text-sm ${isOwnMessage ? 'text-right border-r-2 border-l-0' : ''}`}>
             <div className="font-medium text-xs text-muted-foreground">
-              Replying to {message.replyTo.sender.firstName}
+              Replying to {message.replyTo.sender?.firstName || 'Unknown'}
             </div>
             <div className="truncate">
               {message.replyTo.content}

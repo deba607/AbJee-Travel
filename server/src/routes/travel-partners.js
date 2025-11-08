@@ -1,7 +1,7 @@
 import express from 'express';
 import { body, query, validationResult } from 'express-validator';
-import TravelPartnerRequest from '../models/TravelPartnerRequest.js';
-import User from '../models/User.js';
+import travelPartnerRequestService from '../models/TravelPartnerRequest.js';
+import userService from '../models/User.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();

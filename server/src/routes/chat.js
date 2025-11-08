@@ -1,10 +1,10 @@
 import express from 'express';
 import { body, query, validationResult } from 'express-validator';
-import ChatRoom from '../models/ChatRoom.js';
-import Message from '../models/Message.js';
-import TravelPartnerRequest from '../models/TravelPartnerRequest.js';
+import chatRoomService from '../models/ChatRoom.js';
+import messageService from '../models/Message.js';
+import travelPartnerRequestService from '../models/TravelPartnerRequest.js';
+import userService from '../models/User.js';
 import { authenticate, requireSubscription } from '../middleware/auth.js';
-
 const router = express.Router();
 
 // @route   GET /api/chat/rooms
@@ -33,76 +33,59 @@ router.get('/rooms', authenticate, [
       limit = 20 
     } = req.query;
 
-    // Build query
-    let query = { isActive: true };
+    const numericPage = parseInt(page);
+    const numericLimit = parseInt(limit);
+    const offset = (numericPage - 1) * numericLimit;
 
-    if (type === 'public') {
-      query.type = 'public';
-    } else if (type === 'private') {
-      if (!req.user.canAccessPrivateChat()) {
-        return res.status(403).json({
-          success: false,
-          message: 'Subscription required for private chat rooms',
-          upgradeRequired: true
-        });
-      }
-      query.type = 'private';
-    } else if (type === 'travel_partner') {
-      query.type = 'travel_partner';
+    // Access check for private rooms
+    if (type === 'private' && !userService.canAccessPrivateChat(req.user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Subscription required for private chat rooms',
+        upgradeRequired: true
+      });
     }
 
+    let rooms = [];
     if (destination) {
-      query.$or = [
-        { 'destination.country': new RegExp(destination, 'i') },
-        { 'destination.city': new RegExp(destination, 'i') },
-        { 'destination.region': new RegExp(destination, 'i') }
-      ];
+      // Use destination as country keyword for simple search
+      rooms = await chatRoomService.findByDestination(destination);
+    } else {
+      const targetType = type === 'travel_partner' ? 'travel_partner' : type;
+      rooms = await chatRoomService.findByType(targetType, { limit: numericLimit, offset });
     }
 
-    const skip = (page - 1) * limit;
+    const mapped = rooms.map(room => ({
+      id: room.id,
+      name: room.name,
+      description: room.description,
+      type: room.type,
+      destination: room.destination,
+      memberCount: chatRoomService.getMemberCount(room),
+      messageCount: room.messageCount || 0,
+      lastActivity: room.lastActivity,
+      lastMessage: room.lastMessage || null,
+      avatar: room.avatar || null,
+      tags: room.tags || [],
+      createdBy: room.createdBy || null,
+      isMember: chatRoomService.isMember(room, req.user.id),
+      canAccess: room.type !== 'private' || userService.canAccessPrivateChat(req.user)
+    }));
 
-    const rooms = await ChatRoom.find(query)
-      .populate('createdBy', 'username firstName lastName avatar')
-      .populate('lastMessage', 'content type createdAt')
-      .populate({
-        path: 'lastMessage',
-        populate: {
-          path: 'sender',
-          select: 'username firstName lastName'
-        }
-      })
-      .sort({ lastActivity: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await ChatRoom.countDocuments(query);
+    // Firestore doesn't provide cheap counts; estimate pagination
+    const hasNext = mapped.length === numericLimit;
 
     res.json({
       success: true,
       data: {
-        rooms: rooms.map(room => ({
-          id: room._id,
-          name: room.name,
-          description: room.description,
-          type: room.type,
-          destination: room.destination,
-          memberCount: room.memberCount,
-          messageCount: room.messageCount,
-          lastActivity: room.lastActivity,
-          lastMessage: room.lastMessage,
-          avatar: room.avatar,
-          tags: room.tags,
-          createdBy: room.createdBy,
-          isMember: room.isMember(req.user._id),
-          canAccess: room.canUserAccess(req.user)
-        })),
+        rooms: mapped,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / limit),
-          hasNext: page * limit < total,
-          hasPrev: page > 1
+          page: numericPage,
+          limit: numericLimit,
+          total: null,
+          pages: null,
+          hasNext,
+          hasPrev: numericPage > 1
         }
       }
     });
@@ -158,7 +141,7 @@ router.post('/rooms', authenticate, [
     } = req.body;
 
     // Check if user can create private rooms
-    if (type === 'private' && !req.user.canAccessPrivateChat()) {
+    if (type === 'private' && !userService.canAccessPrivateChat(req.user)) {
       return res.status(403).json({
         success: false,
         message: 'Subscription required to create private chat rooms',
@@ -166,42 +149,32 @@ router.post('/rooms', authenticate, [
       });
     }
 
-    // Create room
-    const room = new ChatRoom({
+    // Create room in Firestore
+    const room = await chatRoomService.create({
       name,
       description,
       type,
       destination,
       tags: tags || [],
       maxMembers,
-      createdBy: req.user._id,
+      createdBy: req.user.id,
       subscriptionRequired: type === 'private'
     });
 
     // Add creator as admin member
-    room.members.push({
-      user: req.user._id,
-      role: 'admin',
-      joinedAt: new Date(),
-      lastReadAt: new Date()
-    });
-
-    await room.save();
-
-    // Populate creator info
-    await room.populate('createdBy', 'username firstName lastName avatar');
+    await chatRoomService.addMember(room.id, req.user.id, 'admin');
 
     res.status(201).json({
       success: true,
       message: 'Chat room created successfully',
       data: {
         room: {
-          id: room._id,
+          id: room.id,
           name: room.name,
           description: room.description,
           type: room.type,
           destination: room.destination,
-          memberCount: room.memberCount,
+          memberCount: chatRoomService.getMemberCount(room) + 1,
           maxMembers: room.maxMembers,
           tags: room.tags,
           createdBy: room.createdBy,
@@ -226,19 +199,17 @@ router.get('/rooms/:roomId', authenticate, async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    const room = await ChatRoom.findById(roomId)
-      .populate('createdBy', 'username firstName lastName avatar')
-      .populate('members.user', 'username firstName lastName avatar isOnline lastSeen');
+    const room = await chatRoomService.findById(roomId);
 
-    if (!room || !room.isActive) {
+    if (!room || room.isActive === false) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
 
-    // Check if user can access this room
-    if (!room.canUserAccess(req.user)) {
+    const canAccess = room.type !== 'private' || userService.canAccessPrivateChat(req.user);
+    if (!canAccess) {
       return res.status(403).json({
         success: false,
         message: 'Access denied to this room',
@@ -250,12 +221,12 @@ router.get('/rooms/:roomId', authenticate, async (req, res) => {
       success: true,
       data: {
         room: {
-          id: room._id,
+          id: room.id,
           name: room.name,
           description: room.description,
           type: room.type,
           destination: room.destination,
-          memberCount: room.memberCount,
+          memberCount: chatRoomService.getMemberCount(room),
           maxMembers: room.maxMembers,
           messageCount: room.messageCount,
           lastActivity: room.lastActivity,
@@ -264,13 +235,13 @@ router.get('/rooms/:roomId', authenticate, async (req, res) => {
           rules: room.rules,
           createdBy: room.createdBy,
           createdAt: room.createdAt,
-          members: room.members.map(member => ({
+          members: (room.members || []).map(member => ({
             user: member.user,
             role: member.role,
             joinedAt: member.joinedAt
           })),
-          isMember: room.isMember(req.user._id),
-          userRole: room.getMemberRole(req.user._id)
+          isMember: chatRoomService.isMember(room, req.user.id),
+          userRole: chatRoomService.getMemberRole(room, req.user.id)
         }
       }
     });
@@ -305,49 +276,39 @@ router.get('/rooms/:roomId/messages', authenticate, [
     const { page = 1, limit = 50 } = req.query;
 
     // Check if room exists and user can access it
-    const room = await ChatRoom.findById(roomId);
-    if (!room || !room.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
+    const room = await chatRoomService.findById(roomId);
+    if (!room || room.isActive === false) {
+      return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
-    if (!room.canUserAccess(req.user)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied to this room'
-      });
+    if (room.type === 'private' && !userService.canAccessPrivateChat(req.user)) {
+      return res.status(403).json({ success: false, message: 'Access denied to this room' });
     }
 
     // Check if user is a member
-    if (!room.isMember(req.user._id)) {
-      return res.status(403).json({
-        success: false,
-        message: 'You must be a member to view messages'
-      });
+    if (!chatRoomService.isMember(room, req.user.id)) {
+      return res.status(403).json({ success: false, message: 'You must be a member to view messages' });
     }
 
-    const messages = await Message.findByChatRoom(roomId, page, limit);
-    const total = await Message.countDocuments({ 
-      chatRoom: roomId, 
-      isDeleted: false 
-    });
+    const numericPage = parseInt(page);
+    const numericLimit = parseInt(limit);
+
+    const messages = await messageService.findByChatRoom(roomId, numericPage, numericLimit);
 
     // Update user's last read timestamp
-    await room.updateMemberLastRead(req.user._id);
+    await chatRoomService.updateMemberLastRead(roomId, req.user.id);
 
     res.json({
       success: true,
       data: {
-        messages: messages.reverse(), // Show oldest first
+        messages: messages.reverse(),
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / limit),
-          hasNext: page * limit < total,
-          hasPrev: page > 1
+          page: numericPage,
+          limit: numericLimit,
+          total: null,
+          pages: null,
+          hasNext: messages.length === numericLimit,
+          hasPrev: numericPage > 1
         }
       }
     });
@@ -368,43 +329,30 @@ router.post('/rooms/:roomId/join', authenticate, async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    const room = await ChatRoom.findById(roomId);
-    if (!room || !room.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
+    const room = await chatRoomService.findById(roomId);
+    if (!room || room.isActive === false) {
+      return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
-    // Check if user can access this room
-    if (!room.canUserAccess(req.user)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied to this room',
-        upgradeRequired: room.type === 'private'
-      });
+    if (room.type === 'private' && !userService.canAccessPrivateChat(req.user)) {
+      return res.status(403).json({ success: false, message: 'Access denied to this room', upgradeRequired: true });
     }
 
-    // Check if already a member
-    if (room.isMember(req.user._id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'You are already a member of this room'
-      });
+    if (chatRoomService.isMember(room, req.user.id)) {
+      return res.status(400).json({ success: false, message: 'You are already a member of this room' });
     }
 
-    // Add user to room
-    await room.addMember(req.user._id);
+    await chatRoomService.addMember(roomId, req.user.id, 'member');
 
     res.json({
       success: true,
       message: 'Successfully joined the room',
       data: {
         room: {
-          id: room._id,
+          id: room.id,
           name: room.name,
           type: room.type,
-          memberCount: room.memberCount + 1
+          memberCount: chatRoomService.getMemberCount(room) + 1
         }
       }
     });
@@ -431,29 +379,18 @@ router.post('/rooms/:roomId/leave', authenticate, async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    const room = await ChatRoom.findById(roomId);
+    const room = await chatRoomService.findById(roomId);
     if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
+      return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
-    // Check if user is a member
-    if (!room.isMember(req.user._id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'You are not a member of this room'
-      });
+    if (!chatRoomService.isMember(room, req.user.id)) {
+      return res.status(400).json({ success: false, message: 'You are not a member of this room' });
     }
 
-    // Remove user from room
-    await room.removeMember(req.user._id);
+    await chatRoomService.removeMember(roomId, req.user.id);
 
-    res.json({
-      success: true,
-      message: 'Successfully left the room'
-    });
+    res.json({ success: true, message: 'Successfully left the room' });
 
   } catch (error) {
     console.error('Leave room error:', error);

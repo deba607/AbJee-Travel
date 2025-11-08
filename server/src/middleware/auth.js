@@ -1,22 +1,8 @@
-import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
-
-// Generate JWT token
-export const generateToken = (userId) => {
-  return jwt.sign(
-    { userId },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-  );
-};
-
-// Verify JWT token
-export const verifyToken = (token) => {
-  return jwt.verify(token, process.env.JWT_SECRET);
-};
+import admin from '../config/firebase-admin.js';
+import userService from '../models/User.js';
 
 // Authentication middleware
-export const authenticate = async (req, res, next) => {
+const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     
@@ -27,19 +13,52 @@ export const authenticate = async (req, res, next) => {
       });
     }
     
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const token = authHeader.split(' ')[1];
     
     try {
-      const decoded = verifyToken(token);
+      // Verify the Firebase ID token
+      const decodedToken = await admin.auth().verifyIdToken(token);
       
-      // Get user from database
-      const user = await User.findById(decoded.userId).select('-password');
+      // Get or create user in our database
+      let user = await userService.findByFirebaseUid(decodedToken.uid);
       
       if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid token. User not found.'
+        // Create new user if they don't exist in our database
+        const displayName = decodedToken.name || '';
+        const nameParts = displayName.split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
+        user = await userService.createWithId(decodedToken.uid, {
+          firebaseUid: decodedToken.uid,
+          email: decodedToken.email,
+          emailVerified: decodedToken.email_verified,
+          displayName: displayName,
+          firstName: firstName,
+          lastName: lastName,
+          username: decodedToken.email?.split('@')[0] || '',
+          avatar: decodedToken.picture || ''
         });
+      } else {
+        // Check if existing user needs firstName/lastName populated
+        if ((!user.firstName || !user.lastName) && user.displayName) {
+          const nameParts = user.displayName.split(' ');
+          const updates = {};
+          if (!user.firstName && nameParts[0]) {
+            updates.firstName = nameParts[0];
+          }
+          if (!user.lastName && nameParts.length > 1) {
+            updates.lastName = nameParts.slice(1).join(' ');
+          }
+          if (!user.username && user.email) {
+            updates.username = user.email.split('@')[0];
+          }
+          
+          if (Object.keys(updates).length > 0) {
+            await userService.update(user.id, updates);
+            user = { ...user, ...updates };
+          }
+        }
       }
       
       if (!user.isActive) {
@@ -50,26 +69,18 @@ export const authenticate = async (req, res, next) => {
       }
       
       // Update user's last seen
-      user.updateLastSeen();
+      await userService.update(user.id, { lastSeen: new Date() });
       
       // Attach user to request object
       req.user = user;
       next();
       
     } catch (tokenError) {
-      if (tokenError.name === 'TokenExpiredError') {
-        return res.status(401).json({
-          success: false,
-          message: 'Token expired. Please login again.'
-        });
-      } else if (tokenError.name === 'JsonWebTokenError') {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid token.'
-        });
-      } else {
-        throw tokenError;
-      }
+      console.error('Token verification error:', tokenError);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token.'
+      });
     }
     
   } catch (error) {
@@ -82,7 +93,7 @@ export const authenticate = async (req, res, next) => {
 };
 
 // Optional authentication middleware (doesn't fail if no token)
-export const optionalAuth = async (req, res, next) => {
+const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     
@@ -91,14 +102,14 @@ export const optionalAuth = async (req, res, next) => {
       return next();
     }
     
-    const token = authHeader.substring(7);
+    const token = authHeader.split(' ')[1];
     
     try {
-      const decoded = verifyToken(token);
-      const user = await User.findById(decoded.userId).select('-password');
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      const user = await userService.findByFirebaseUid(decodedToken.uid);
       
       if (user && user.isActive) {
-        user.updateLastSeen();
+        await userService.update(user.id, { lastSeen: new Date() });
         req.user = user;
       } else {
         req.user = null;
@@ -118,7 +129,7 @@ export const optionalAuth = async (req, res, next) => {
 };
 
 // Check if user has active subscription
-export const requireSubscription = (req, res, next) => {
+const requireSubscription = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
       success: false,
@@ -126,7 +137,7 @@ export const requireSubscription = (req, res, next) => {
     });
   }
   
-  if (!req.user.canAccessPrivateChat()) {
+  if (!userService.canAccessPrivateChat(req.user)) {
     return res.status(403).json({
       success: false,
       message: 'Active subscription required for this feature.',
@@ -159,7 +170,7 @@ export const requireSubscriptionType = (requiredTypes) => {
       });
     }
     
-    if (!req.user.hasActiveSubscription() && userSubscriptionType !== 'free') {
+    if (!userService.hasActiveSubscription(req.user) && userSubscriptionType !== 'free') {
       return res.status(403).json({
         success: false,
         message: 'Your subscription has expired. Please renew to continue.',
@@ -172,7 +183,7 @@ export const requireSubscriptionType = (requiredTypes) => {
 };
 
 // Admin only middleware
-export const requireAdmin = (req, res, next) => {
+const requireAdmin = async (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
       success: false,
@@ -180,7 +191,7 @@ export const requireAdmin = (req, res, next) => {
     });
   }
   
-  // Check if user has admin role (you might want to add this to User model)
+  // Check if user has admin role
   if (req.user.role !== 'admin') {
     return res.status(403).json({
       success: false,
@@ -191,72 +202,10 @@ export const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Rate limiting for authentication attempts
-export const authRateLimit = {
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per window
-  message: {
-    success: false,
-    message: 'Too many authentication attempts. Please try again later.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-};
-
-// Refresh token functionality
-export const refreshToken = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-    
-    if (!refreshToken) {
-      return res.status(401).json({
-        success: false,
-        message: 'Refresh token required.'
-      });
-    }
-    
-    try {
-      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-      const user = await User.findById(decoded.userId).select('-password');
-      
-      if (!user || !user.isActive) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid refresh token.'
-        });
-      }
-      
-      // Generate new access token
-      const newAccessToken = generateToken(user._id);
-      
-      res.json({
-        success: true,
-        data: {
-          accessToken: newAccessToken,
-          user: {
-            id: user._id,
-            username: user.username,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            avatar: user.avatar,
-            subscription: user.subscription
-          }
-        }
-      });
-      
-    } catch (tokenError) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired refresh token.'
-      });
-    }
-    
-  } catch (error) {
-    console.error('Refresh token error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to refresh token.'
-    });
-  }
+// Export all middleware functions
+export {
+  authenticate,
+  optionalAuth,
+  requireSubscription,
+  requireAdmin
 };

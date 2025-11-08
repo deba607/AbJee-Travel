@@ -31,28 +31,22 @@ export function ThemeProvider({
   )
 
   useEffect(() => {
-    const root = window.document.documentElement
-
-    root.classList.remove("light", "dark")
+    const root = window.document.documentElement;
+    const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    
+    root.classList.remove("light", "dark");
+    root.classList.add(isDark ? "dark" : "light");
 
     let mediaQuery: MediaQueryList | null = null;
     let systemThemeListener: ((e: MediaQueryListEvent) => void) | null = null;
 
-    function applySystemTheme() {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      root.classList.remove("light", "dark");
-      root.classList.add(systemTheme);
-    }
-
     if (theme === "system") {
-      applySystemTheme();
       mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      systemThemeListener = () => {
-        applySystemTheme();
+      systemThemeListener = (e) => {
+        root.classList.remove("light", "dark");
+        root.classList.add(e.matches ? "dark" : "light");
       };
       mediaQuery.addEventListener("change", systemThemeListener);
-    } else {
-      root.classList.add(theme);
     }
 
     return () => {

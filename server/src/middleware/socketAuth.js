@@ -1,66 +1,162 @@
-import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
+import admin from '../config/firebase-admin.js';
+import userService from '../models/User.js';
 
 // Socket.IO authentication middleware
-export const authenticateSocket = async (socket, next) => {
+const authenticateSocket = async (socket, next) => {
   try {
-    // Get token from handshake auth or query
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    // Try to get token from auth object first
+    let token = socket.handshake.auth?.token;
+    
+    // If no token in auth, check headers (for polling transport)
+    if (!token && socket.handshake.headers.authorization) {
+      const authHeader = socket.handshake.headers.authorization;
+      token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader;
+    }
     
     if (!token) {
+      console.error('[SocketAuth] No token found in socket connection');
       return next(new Error('Authentication error: No token provided'));
     }
     
     try {
-      // Verify JWT token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      // Remove any 'Bearer ' prefix if present (in case it wasn't handled above)
+      token = token.replace('Bearer ', '');
+      
+      // Basic token validation
+      if (!token.includes('.') || token.split('.').length !== 3) {
+        console.error('[SocketAuth] Invalid token format - not a valid JWT structure');
+        return next(new Error('Authentication error: Invalid token format'));
+      }
+
+      // Parse token parts for debugging (header and payload only)
+      try {
+        const [headerB64, payloadB64] = token.split('.');
+        const header = JSON.parse(Buffer.from(headerB64, 'base64').toString());
+        const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString());
+        
+        console.log('[SocketAuth] Token validation:', {
+          header: { alg: header.alg, typ: header.typ },
+          payload: {
+            iss: payload.iss,
+            aud: payload.aud,
+            sub: payload.sub,
+            exp: payload.exp ? new Date(payload.exp * 1000).toISOString() : 'none',
+            iat: payload.iat ? new Date(payload.iat * 1000).toISOString() : 'none'
+          }
+        });
+      } catch (parseError) {
+        console.warn('[SocketAuth] Could not parse token parts (non-fatal):', parseError);
+      }
+
+      // Verify Firebase token
+      const decodedToken = await admin.auth().verifyIdToken(token);
       
       // Get user from database
-      const user = await User.findById(decoded.userId).select('-password');
+      let user = await userService.findByFirebaseUid(decodedToken.uid);
       
       if (!user) {
-        return next(new Error('Authentication error: User not found'));
-      }
-      
-      if (!user.isActive) {
+        // Create new user if they don't exist
+        const displayName = decodedToken.name || '';
+        const nameParts = displayName.split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
+        user = await userService.createWithId(decodedToken.uid, {
+          firebaseUid: decodedToken.uid,
+          email: decodedToken.email,
+          emailVerified: decodedToken.email_verified || false,
+          displayName: displayName,
+          firstName: firstName,
+          lastName: lastName,
+          username: decodedToken.email?.split('@')[0] || '',
+          avatar: decodedToken.picture || '',
+          isActive: true
+        });
+        console.log(`[SocketAuth] Created new user: ${user.email} (${user.id})`);
+      } else if (!user.isActive) {
+        console.error(`[SocketAuth] Authentication failed: Account deactivated for user ${user.id}`);
         return next(new Error('Authentication error: Account deactivated'));
+      } else {
+        // Check if existing user needs firstName/lastName populated
+        if ((!user.firstName || !user.lastName) && user.displayName) {
+          const nameParts = user.displayName.split(' ');
+          const updates = {};
+          if (!user.firstName && nameParts[0]) {
+            updates.firstName = nameParts[0];
+          }
+          if (!user.lastName && nameParts.length > 1) {
+            updates.lastName = nameParts.slice(1).join(' ');
+          }
+          if (!user.username && user.email) {
+            updates.username = user.email.split('@')[0];
+          }
+          
+          if (Object.keys(updates).length > 0) {
+            try {
+              await userService.update(user.id, updates);
+              // Update the user object with the new values
+              user = { ...user, ...updates };
+              console.log(`[SocketAuth] Updated user ${user.id} with missing fields:`, updates);
+            } catch (updateError) {
+              console.error(`[SocketAuth] Failed to update user fields:`, updateError);
+            }
+          }
+        }
       }
       
-      // Update user online status
-      user.isOnline = true;
-      user.lastSeen = new Date();
-      await user.save();
+      // Update user's last active timestamp
+      // In socketAuth.js, around line 70 where updateLastActive is called
+      try {
+        await userService.updateLastActive(user.id);
+      } catch (updateError) {
+        console.error(`[SocketAuth] Failed to update last active for user ${user.id}:`, updateError);
+        // Don't fail the authentication if this fails
+      }
       
       // Attach user to socket
       socket.user = user;
-      socket.userId = user._id.toString();
+      socket.userId = user.id;
       
-      console.log(`Socket authenticated for user: ${user.username} (${user._id})`);
+      console.log(`[SocketAuth] Authenticated user: ${user.email} (${user.id})`);
       next();
       
     } catch (tokenError) {
-      if (tokenError.name === 'TokenExpiredError') {
+      console.error('[SocketAuth] Token verification error:', {
+        code: tokenError.code,
+        message: tokenError.message,
+        stack: tokenError.stack
+      });
+      
+      // Handle specific Firebase auth errors
+      if (tokenError.code === 'auth/id-token-expired') {
         return next(new Error('Authentication error: Token expired'));
-      } else if (tokenError.name === 'JsonWebTokenError') {
+      } else if (tokenError.code === 'auth/argument-error' || 
+                 tokenError.code === 'auth/invalid-id-token') {
         return next(new Error('Authentication error: Invalid token'));
+      } else if (tokenError.code === 'auth/user-disabled') {
+        return next(new Error('Authentication error: Account disabled'));
       } else {
-        throw tokenError;
+        console.error('[SocketAuth] Unexpected authentication error:', tokenError);
+        return next(new Error('Authentication error: Token verification failed'));
       }
     }
     
   } catch (error) {
-    console.error('Socket authentication error:', error);
-    return next(new Error('Authentication error: Failed to authenticate'));
+    console.error('[SocketAuth] Unexpected error during authentication:', {
+      error: error.message,
+      stack: error.stack
+    });
+    return next(new Error('Authentication error: Internal server error'));
   }
 };
 
 // Middleware to check if user can access private chat rooms
-export const requireSubscriptionForSocket = (socket, next) => {
+const requireSubscriptionForSocket = (socket, next) => {
   if (!socket.user) {
     return next(new Error('Authentication required'));
   }
   
-  if (!socket.user.canAccessPrivateChat()) {
+  if (!userService.canAccessPrivateChat(socket.user)) {
     return next(new Error('Subscription required for private chat access'));
   }
   
@@ -81,7 +177,7 @@ export const canJoinRoom = async (socket, roomId, roomType = 'public') => {
     
     // For private rooms, check subscription
     if (roomType === 'private') {
-      if (!socket.user.canAccessPrivateChat()) {
+      if (!userService.canAccessPrivateChat(socket.user)) {
         return { 
           success: false, 
           message: 'Active subscription required for private chat rooms',
@@ -104,26 +200,52 @@ export const canJoinRoom = async (socket, roomId, roomType = 'public') => {
 };
 
 // Handle socket disconnection and cleanup
-export const handleSocketDisconnect = async (socket) => {
+const handleSocketDisconnect = async (socket) => {
   try {
     if (socket.user) {
       // Update user offline status
-      const user = await User.findById(socket.user._id);
-      if (user) {
-        user.isOnline = false;
-        user.lastSeen = new Date();
-        await user.save();
-        
-        console.log(`User ${user.username} disconnected and marked offline`);
-      }
+      await userService.updateStatus(socket.user.id, false);
+      console.log(`User ${socket.user.username || socket.user.email} disconnected and marked offline`);
     }
   } catch (error) {
     console.error('Socket disconnect cleanup error:', error);
   }
 };
 
+// Rate limiting for socket events
+const rateLimits = new Map();
+
+const checkSocketRateLimit = (socket, action, maxRequests, timeWindow) => {
+  const userId = socket.user.id;
+  const key = `${userId}:${action}`;
+  const now = Date.now();
+  
+  // Get or initialize rate limit data
+  const limit = rateLimits.get(key) || {
+    requests: [],
+    lastReset: now
+  };
+  
+  // Clear old requests
+  limit.requests = limit.requests.filter(time => time > now - timeWindow);
+  
+  // Check if limit is exceeded
+  if (limit.requests.length >= maxRequests) {
+    return {
+      success: false,
+      message: `Rate limit exceeded for ${action}. Please try again later.`
+    };
+  }
+  
+  // Add new request
+  limit.requests.push(now);
+  rateLimits.set(key, limit);
+  
+  return { success: true };
+};
+
 // Validate socket event permissions
-export const validateSocketPermission = (socket, action, data = {}) => {
+const validateSocketPermission = (socket, action, data = {}) => {
   if (!socket.user) {
     return { success: false, message: 'Authentication required' };
   }
@@ -142,7 +264,7 @@ export const validateSocketPermission = (socket, action, data = {}) => {
       return { success: true };
       
     case 'create_private_room':
-      if (!socket.user.canAccessPrivateChat()) {
+      if (!userService.canAccessPrivateChat(socket.user)) {
         return { 
           success: false, 
           message: 'Subscription required to create private rooms',
@@ -179,45 +301,14 @@ export const validateSocketPermission = (socket, action, data = {}) => {
   }
 };
 
-// Rate limiting for socket events
-const socketRateLimits = new Map();
+// In socketAuth.js, right before calling updateLastActive
+console.log('UserService methods:', Object.keys(Object.getPrototypeOf(userService)));
+console.log('updateLastActive exists:', typeof userService.updateLastActive);
 
-export const checkSocketRateLimit = (socket, action, limit = 10, windowMs = 60000) => {
-  const key = `${socket.userId}:${action}`;
-  const now = Date.now();
-  
-  if (!socketRateLimits.has(key)) {
-    socketRateLimits.set(key, { count: 1, resetTime: now + windowMs });
-    return { success: true };
-  }
-  
-  const rateLimit = socketRateLimits.get(key);
-  
-  if (now > rateLimit.resetTime) {
-    // Reset the rate limit
-    rateLimit.count = 1;
-    rateLimit.resetTime = now + windowMs;
-    return { success: true };
-  }
-  
-  if (rateLimit.count >= limit) {
-    return { 
-      success: false, 
-      message: `Rate limit exceeded for ${action}. Try again later.`,
-      retryAfter: Math.ceil((rateLimit.resetTime - now) / 1000)
-    };
-  }
-  
-  rateLimit.count++;
-  return { success: true };
+export {
+  authenticateSocket,
+  requireSubscriptionForSocket,
+  handleSocketDisconnect,
+  validateSocketPermission,
+  checkSocketRateLimit
 };
-
-// Clean up rate limit data periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, data] of socketRateLimits.entries()) {
-    if (now > data.resetTime) {
-      socketRateLimits.delete(key);
-    }
-  }
-}, 300000); // Clean up every 5 minutes

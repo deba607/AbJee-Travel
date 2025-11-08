@@ -1,369 +1,180 @@
-import mongoose from 'mongoose';
+import { db, admin } from '../config/database.js';
 
-const travelPartnerRequestSchema = new mongoose.Schema({
-  // Request creator
-  requester: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  
-  // Travel details
+const COLLECTION_NAME = 'travelPartnerRequests';
+
+const createTravelRequestData = (data) => ({
+  requester: data.requester || null,
+
   destination: {
-    country: {
-      type: String,
-      required: [true, 'Country is required'],
-      trim: true
-    },
-    city: {
-      type: String,
-      trim: true
-    },
-    region: {
-      type: String,
-      trim: true
-    },
-    coordinates: {
-      latitude: Number,
-      longitude: Number
-    }
+    country: data.destination?.country || '',
+    city: data.destination?.city || '',
+    region: data.destination?.region || '',
+    coordinates: data.destination?.coordinates || null,
   },
-  
-  // Travel dates
-  startDate: {
-    type: Date,
-    required: [true, 'Start date is required'],
-    validate: {
-      validator: function(value) {
-        return value > new Date();
-      },
-      message: 'Start date must be in the future'
-    }
-  },
-  endDate: {
-    type: Date,
-    required: [true, 'End date is required'],
-    validate: {
-      validator: function(value) {
-        return value > this.startDate;
-      },
-      message: 'End date must be after start date'
-    }
-  },
-  
-  // Budget information
+
+  startDate: data.startDate || null,
+  endDate: data.endDate || null,
+
   budget: {
-    min: {
-      type: Number,
-      min: 0
-    },
-    max: {
-      type: Number,
-      min: 0
-    },
-    currency: {
-      type: String,
-      default: 'USD',
-      enum: ['USD', 'EUR', 'GBP', 'INR', 'AUD', 'CAD', 'JPY']
-    },
-    isFlexible: {
-      type: Boolean,
-      default: true
-    }
+    min: typeof data.budget?.min === 'number' ? data.budget.min : 0,
+    max: typeof data.budget?.max === 'number' ? data.budget.max : 0,
+    currency: data.budget?.currency || 'USD',
+    isFlexible: typeof data.budget?.isFlexible === 'boolean' ? data.budget.isFlexible : true,
   },
-  
-  // Group preferences
+
   groupSize: {
-    preferred: {
-      type: Number,
-      min: 1,
-      max: 20,
-      default: 2
-    },
-    maximum: {
-      type: Number,
-      min: 1,
-      max: 20,
-      default: 4
-    }
+    preferred: typeof data.groupSize?.preferred === 'number' ? data.groupSize.preferred : 2,
+    maximum: typeof data.groupSize?.maximum === 'number' ? data.groupSize.maximum : 4,
   },
-  
-  // Travel preferences
-  travelStyle: {
-    type: String,
-    enum: ['budget', 'mid-range', 'luxury', 'backpacking', 'adventure', 'relaxed', 'cultural', 'party'],
-    required: true
-  },
-  
-  accommodation: {
-    type: [String],
-    enum: ['hostel', 'hotel', 'airbnb', 'camping', 'guesthouse', 'resort'],
-    default: ['hotel', 'airbnb']
-  },
-  
-  transportation: {
-    type: [String],
-    enum: ['flight', 'train', 'bus', 'car', 'bike', 'walking', 'local_transport'],
-    default: ['flight', 'local_transport']
-  },
-  
-  // Interests and activities
-  interests: [{
-    type: String,
-    enum: [
-      'adventure', 'culture', 'food', 'nature', 'history', 'photography', 
-      'nightlife', 'shopping', 'museums', 'beaches', 'mountains', 'cities',
-      'festivals', 'sports', 'wellness', 'volunteering', 'learning'
-    ]
-  }],
-  
-  // Request details
-  title: {
-    type: String,
-    required: [true, 'Title is required'],
-    trim: true,
-    maxlength: [100, 'Title cannot exceed 100 characters']
-  },
-  description: {
-    type: String,
-    required: [true, 'Description is required'],
-    trim: true,
-    maxlength: [1000, 'Description cannot exceed 1000 characters']
-  },
-  
-  // Partner requirements
+
+  travelStyle: data.travelStyle || 'budget',
+  accommodation: Array.isArray(data.accommodation) ? data.accommodation : ['hotel', 'airbnb'],
+  transportation: Array.isArray(data.transportation) ? data.transportation : ['flight', 'local_transport'],
+  interests: Array.isArray(data.interests) ? data.interests : [],
+
+  title: (data.title || '').slice(0, 100),
+  description: (data.description || '').slice(0, 1000),
+
   partnerRequirements: {
     ageRange: {
-      min: {
-        type: Number,
-        min: 18,
-        max: 100
-      },
-      max: {
-        type: Number,
-        min: 18,
-        max: 100
-      }
+      min: typeof data.partnerRequirements?.ageRange?.min === 'number' ? data.partnerRequirements.ageRange.min : 18,
+      max: typeof data.partnerRequirements?.ageRange?.max === 'number' ? data.partnerRequirements.ageRange.max : 100,
     },
-    gender: {
-      type: String,
-      enum: ['any', 'male', 'female', 'non-binary'],
-      default: 'any'
-    },
-    languages: [String],
-    experience: {
-      type: String,
-      enum: ['any', 'beginner', 'intermediate', 'experienced'],
-      default: 'any'
-    }
+    gender: data.partnerRequirements?.gender || 'any',
+    languages: Array.isArray(data.partnerRequirements?.languages) ? data.partnerRequirements.languages : [],
+    experience: data.partnerRequirements?.experience || 'any',
   },
-  
-  // Request status
-  status: {
-    type: String,
-    enum: ['active', 'matched', 'completed', 'cancelled', 'expired'],
-    default: 'active'
-  },
-  
-  // Responses and matches
-  responses: [{
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    message: {
-      type: String,
-      maxlength: [500, 'Response message cannot exceed 500 characters']
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'accepted', 'rejected'],
-      default: 'pending'
-    },
-    respondedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  
-  // Matched partners
-  matchedPartners: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
-  
-  // Request settings
-  isPublic: {
-    type: Boolean,
-    default: true
-  },
-  allowDirectContact: {
-    type: Boolean,
-    default: true
-  },
-  
-  // Expiration
-  expiresAt: {
-    type: Date,
-    default: function() {
-      // Default expiration: 30 days from creation or start date, whichever is sooner
-      const thirtyDaysFromNow = new Date();
-      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-      
-      return this.startDate < thirtyDaysFromNow ? this.startDate : thirtyDaysFromNow;
-    }
-  },
-  
-  // Analytics
-  views: {
-    type: Number,
-    default: 0
-  },
-  responseCount: {
-    type: Number,
-    default: 0
-  }
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+
+  status: data.status || 'active',
+  responses: Array.isArray(data.responses) ? data.responses : [],
+  matchedPartners: Array.isArray(data.matchedPartners) ? data.matchedPartners : [],
+  isPublic: typeof data.isPublic === 'boolean' ? data.isPublic : true,
+  allowDirectContact: typeof data.allowDirectContact === 'boolean' ? data.allowDirectContact : true,
+
+  expiresAt: data.expiresAt || null,
+  views: typeof data.views === 'number' ? data.views : 0,
+  responseCount: typeof data.responseCount === 'number' ? data.responseCount : 0,
+
+  createdAt: data.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
 });
 
-// Indexes for better performance
-travelPartnerRequestSchema.index({ requester: 1, status: 1 });
-travelPartnerRequestSchema.index({ 'destination.country': 1, status: 1 });
-travelPartnerRequestSchema.index({ 'destination.city': 1, status: 1 });
-travelPartnerRequestSchema.index({ startDate: 1, status: 1 });
-travelPartnerRequestSchema.index({ travelStyle: 1, status: 1 });
-travelPartnerRequestSchema.index({ interests: 1, status: 1 });
-travelPartnerRequestSchema.index({ expiresAt: 1 });
-travelPartnerRequestSchema.index({ createdAt: -1 });
-
-// Virtual for duration in days
-travelPartnerRequestSchema.virtual('durationDays').get(function() {
-  if (this.startDate && this.endDate) {
-    const diffTime = Math.abs(this.endDate - this.startDate);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+class TravelPartnerRequestService {
+  constructor() {
+    this.collection = db.collection(COLLECTION_NAME);
   }
-  return 0;
-});
 
-// Virtual for days until trip
-travelPartnerRequestSchema.virtual('daysUntilTrip').get(function() {
-  if (this.startDate) {
-    const diffTime = this.startDate - new Date();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  async create(data) {
+    const ref = this.collection.doc();
+    const payload = createTravelRequestData({ ...data, id: ref.id });
+    await ref.set(payload);
+    return { id: ref.id, ...payload };
   }
-  return 0;
-});
 
-// Method to add response
-travelPartnerRequestSchema.methods.addResponse = function(userId, message) {
-  // Check if user already responded
-  const existingResponse = this.responses.find(
-    response => response.user.toString() === userId.toString()
-  );
-  
-  if (existingResponse) {
-    throw new Error('User has already responded to this request');
+  async findById(id) {
+    const doc = await this.collection.doc(id).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() };
   }
-  
-  this.responses.push({
-    user: userId,
-    message: message,
-    status: 'pending',
-    respondedAt: new Date()
-  });
-  
-  this.responseCount = this.responses.length;
-  return this.save();
-};
 
-// Method to accept/reject response
-travelPartnerRequestSchema.methods.updateResponseStatus = function(responseId, status) {
-  const response = this.responses.id(responseId);
-  if (!response) {
-    throw new Error('Response not found');
+  async update(id, updates) {
+    const ref = this.collection.doc(id);
+    await ref.update({ ...updates, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    return this.findById(id);
   }
-  
-  response.status = status;
-  
-  // If accepted, add to matched partners
-  if (status === 'accepted') {
-    if (!this.matchedPartners.includes(response.user)) {
-      this.matchedPartners.push(response.user);
+
+  async delete(id) {
+    await this.collection.doc(id).delete();
+    return true;
+  }
+
+  async addResponse(requestId, userId, message) {
+    const ref = this.collection.doc(requestId);
+    const doc = await ref.get();
+    if (!doc.exists) throw new Error('Request not found');
+    const data = doc.data();
+
+    const responses = data.responses || [];
+    if (responses.find(r => r.user === userId)) {
+      throw new Error('User has already responded to this request');
     }
-    
-    // Check if we've reached the maximum group size
-    if (this.matchedPartners.length >= this.groupSize.maximum) {
-      this.status = 'matched';
+
+    responses.push({ user: userId, message, status: 'pending', respondedAt: Date.now() });
+    await ref.update({ responses, responseCount: responses.length, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    return this.findById(requestId);
+  }
+
+  async updateResponseStatus(requestId, userId, status) {
+    const ref = this.collection.doc(requestId);
+    const doc = await ref.get();
+    if (!doc.exists) throw new Error('Request not found');
+    const data = doc.data();
+
+    const responses = (data.responses || []).map(r => r.user === userId ? { ...r, status } : r);
+    let matchedPartners = data.matchedPartners || [];
+    if (status === 'accepted' && !matchedPartners.includes(userId)) {
+      matchedPartners.push(userId);
     }
+
+    await ref.update({ responses, matchedPartners, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    return this.findById(requestId);
   }
-  
-  return this.save();
-};
 
-// Method to increment views
-travelPartnerRequestSchema.methods.incrementViews = function() {
-  this.views += 1;
-  return this.save();
-};
+  async incrementViews(requestId) {
+    const ref = this.collection.doc(requestId);
+    await ref.update({ views: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    return this.findById(requestId);
+  }
 
-// Method to check if request is expired
-travelPartnerRequestSchema.methods.isExpired = function() {
-  return this.expiresAt < new Date() || this.startDate < new Date();
-};
+  isExpired(request) {
+    const now = Date.now();
+    const expiresAt = request.expiresAt ? new Date(request.expiresAt).getTime() : 0;
+    const startDate = request.startDate ? new Date(request.startDate).getTime() : 0;
+    return (expiresAt && expiresAt < now) || (startDate && startDate < now);
+  }
 
-// Static method to find matching requests
-travelPartnerRequestSchema.statics.findMatching = function(criteria) {
-  const query = {
-    status: 'active',
-    isPublic: true,
-    expiresAt: { $gt: new Date() },
-    startDate: { $gt: new Date() }
-  };
-  
-  if (criteria.destination) {
-    if (criteria.destination.country) {
-      query['destination.country'] = new RegExp(criteria.destination.country, 'i');
+  async findMatching(criteria = {}) {
+    let query = this.collection
+      .where('status', '==', 'active')
+      .where('isPublic', '==', true);
+
+    if (criteria.destination?.country) {
+      query = query.where('destination.country', '==', criteria.destination.country);
     }
-    if (criteria.destination.city) {
-      query['destination.city'] = new RegExp(criteria.destination.city, 'i');
+    if (criteria.destination?.city) {
+      query = query.where('destination.city', '==', criteria.destination.city);
     }
-  }
-  
-  if (criteria.dateRange) {
-    query.startDate = { 
-      $gte: criteria.dateRange.start,
-      $lte: criteria.dateRange.end
-    };
-  }
-  
-  if (criteria.travelStyle) {
-    query.travelStyle = criteria.travelStyle;
-  }
-  
-  if (criteria.interests && criteria.interests.length > 0) {
-    query.interests = { $in: criteria.interests };
-  }
-  
-  return this.find(query)
-    .populate('requester', 'username firstName lastName avatar')
-    .sort({ createdAt: -1 });
-};
+    if (criteria.travelStyle) {
+      query = query.where('travelStyle', '==', criteria.travelStyle);
+    }
+    if (criteria.interests && criteria.interests.length) {
+      // Firestore does not support $in on arrays arbitrarily; use array-contains-any for up to 10
+      const limited = criteria.interests.slice(0, 10);
+      query = query.where('interests', 'array-contains-any', limited);
+    }
 
-// Static method to clean up expired requests
-travelPartnerRequestSchema.statics.cleanupExpired = function() {
-  return this.updateMany(
-    {
-      status: 'active',
-      $or: [
-        { expiresAt: { $lt: new Date() } },
-        { startDate: { $lt: new Date() } }
-      ]
-    },
-    { status: 'expired' }
-  );
-};
+    // Date range
+    if (criteria.dateRange?.start && criteria.dateRange?.end) {
+      query = query.where('startDate', '>=', criteria.dateRange.start);
+    }
 
-export default mongoose.model('TravelPartnerRequest', travelPartnerRequestSchema);
+    const snapshot = await query.orderBy('createdAt', 'desc').get();
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+
+  async cleanupExpired() {
+    // This would typically run in a scheduled job; here we query and update
+    const now = new Date();
+    const snapshot = await this.collection
+      .where('status', '==', 'active')
+      .where('expiresAt', '<', now)
+      .get();
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => batch.update(doc.ref, { status: 'expired' }));
+    await batch.commit();
+    return true;
+  }
+}
+
+const travelPartnerRequestService = new TravelPartnerRequestService();
+export default travelPartnerRequestService;

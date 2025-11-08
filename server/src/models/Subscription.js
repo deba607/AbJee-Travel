@@ -1,325 +1,91 @@
-import mongoose from 'mongoose';
+import { db, admin } from '../config/database.js';
 
-const subscriptionSchema = new mongoose.Schema({
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    unique: true
-  },
-  
-  // Subscription plan details
+const COLLECTION_NAME = 'subscriptions';
+
+const createSubscriptionData = (data) => ({
+  user: data.user || null,
   plan: {
-    type: {
-      type: String,
-      enum: ['free', 'pro', 'premium'],
-      required: true,
-      default: 'free'
-    },
-    name: {
-      type: String,
-      required: true
-    },
+    type: data.plan?.type || 'free',
+    name: data.plan?.name || 'Free Plan',
     price: {
-      amount: {
-        type: Number,
-        required: true,
-        min: 0
-      },
-      currency: {
-        type: String,
-        default: 'USD',
-        enum: ['USD', 'EUR', 'GBP', 'INR']
-      },
-      interval: {
-        type: String,
-        enum: ['monthly', 'yearly'],
-        required: function() {
-          return this.plan.type !== 'free';
-        }
-      }
-    }
+      amount: data.plan?.price?.amount || 0,
+      currency: data.plan?.price?.currency || 'USD',
+      interval: data.plan?.price?.interval || null,
+    },
   },
-  
-  // Subscription status
-  status: {
-    type: String,
-    enum: ['active', 'inactive', 'cancelled', 'expired', 'past_due', 'trialing'],
-    default: 'active'
+  status: data.status || 'active',
+  startDate: data.startDate || admin.firestore.Timestamp.now(),
+  endDate: data.endDate || null,
+  trialEndDate: data.trialEndDate || null,
+  paymentMethod: data.paymentMethod || { type: 'free' },
+  stripeCustomerId: data.stripeCustomerId || null,
+  stripeSubscriptionId: data.stripeSubscriptionId || null,
+  paypalSubscriptionId: data.paypalSubscriptionId || null,
+  billingHistory: data.billingHistory || [],
+  nextBillingDate: data.nextBillingDate || null,
+  features: data.features || {
+    privateChatAccess: false,
+    maxPrivateChats: 0,
+    travelPartnerRequests: 1,
+    prioritySupport: false,
+    advancedFilters: false,
+    profileBoost: false,
+    fileUploadLimit: 5,
+    customDestinations: false,
   },
-  
-  // Subscription dates
-  startDate: {
-    type: Date,
-    required: true,
-    default: Date.now
+  usage: data.usage || {
+    privateChatsUsed: 0,
+    travelRequestsUsed: 0,
+    lastResetDate: admin.firestore.Timestamp.now(),
   },
-  endDate: {
-    type: Date,
-    required: function() {
-      return this.plan.type !== 'free';
-    }
-  },
-  trialEndDate: {
-    type: Date
-  },
-  
-  // Payment information
-  paymentMethod: {
-    type: {
-      type: String,
-      enum: ['card', 'paypal', 'bank_transfer', 'free'],
-      default: 'free'
-    },
-    last4: String, // Last 4 digits of card
-    brand: String, // Visa, Mastercard, etc.
-    expiryMonth: Number,
-    expiryYear: Number
-  },
-  
-  // External payment provider data
-  stripeCustomerId: String,
-  stripeSubscriptionId: String,
-  paypalSubscriptionId: String,
-  
-  // Billing information
-  billingHistory: [{
-    amount: {
-      type: Number,
-      required: true
-    },
-    currency: {
-      type: String,
-      default: 'USD'
-    },
-    status: {
-      type: String,
-      enum: ['paid', 'pending', 'failed', 'refunded'],
-      required: true
-    },
-    invoiceId: String,
-    paymentDate: {
-      type: Date,
-      default: Date.now
-    },
-    description: String,
-    failureReason: String
-  }],
-  
-  // Next billing date
-  nextBillingDate: {
-    type: Date
-  },
-  
-  // Subscription features and limits
-  features: {
-    privateChatAccess: {
-      type: Boolean,
-      default: false
-    },
-    maxPrivateChats: {
-      type: Number,
-      default: 0
-    },
-    travelPartnerRequests: {
-      type: Number,
-      default: 1 // Free users get 1 active request
-    },
-    prioritySupport: {
-      type: Boolean,
-      default: false
-    },
-    advancedFilters: {
-      type: Boolean,
-      default: false
-    },
-    profileBoost: {
-      type: Boolean,
-      default: false
-    },
-    fileUploadLimit: {
-      type: Number,
-      default: 5 // MB
-    },
-    customDestinations: {
-      type: Boolean,
-      default: false
-    }
-  },
-  
-  // Usage tracking
-  usage: {
-    privateChatsUsed: {
-      type: Number,
-      default: 0
-    },
-    travelRequestsUsed: {
-      type: Number,
-      default: 0
-    },
-    lastResetDate: {
-      type: Date,
-      default: Date.now
-    }
-  },
-  
-  // Cancellation information
-  cancellation: {
-    cancelledAt: Date,
-    reason: String,
-    feedback: String,
-    cancelAtPeriodEnd: {
-      type: Boolean,
-      default: false
-    }
-  },
-  
-  // Auto-renewal settings
-  autoRenew: {
-    type: Boolean,
-    default: true
-  },
-  
-  // Promotional codes
-  promoCode: {
-    code: String,
-    discount: {
-      type: Number,
-      min: 0,
-      max: 100
-    },
-    appliedAt: Date
-  }
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  cancellation: data.cancellation || null,
+  autoRenew: data.autoRenew !== undefined ? data.autoRenew : true,
+  promoCode: data.promoCode || null,
+  createdAt: data.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
 });
 
-// Indexes for better performance
-subscriptionSchema.index({ user: 1 });
-subscriptionSchema.index({ status: 1 });
-subscriptionSchema.index({ endDate: 1 });
-subscriptionSchema.index({ nextBillingDate: 1 });
-subscriptionSchema.index({ 'plan.type': 1 });
-
-// Virtual for days remaining
-subscriptionSchema.virtual('daysRemaining').get(function() {
-  if (this.endDate && this.status === 'active') {
-    const diffTime = this.endDate - new Date();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+class SubscriptionService {
+  constructor() {
+    this.collection = db.collection(COLLECTION_NAME);
   }
-  return 0;
-});
 
-// Virtual for is active
-subscriptionSchema.virtual('isActive').get(function() {
-  return this.status === 'active' && 
-         (!this.endDate || this.endDate > new Date());
-});
-
-// Virtual for is trial
-subscriptionSchema.virtual('isTrial').get(function() {
-  return this.status === 'trialing' && 
-         this.trialEndDate && 
-         this.trialEndDate > new Date();
-});
-
-// Method to check if user can access feature
-subscriptionSchema.methods.canAccessFeature = function(featureName) {
-  if (!this.isActive && !this.isTrial) {
-    return false;
+  async create(subscriptionData) {
+    const subscriptionRef = this.collection.doc();
+    const subscription = createSubscriptionData({ ...subscriptionData, id: subscriptionRef.id });
+    subscription.features = this.getFeaturesForPlan(subscription.plan.type);
+    await subscriptionRef.set(subscription);
+    return { id: subscriptionRef.id, ...subscription };
   }
-  
-  return this.features[featureName] || false;
-};
 
-// Method to check usage limits
-subscriptionSchema.methods.canUseFeature = function(featureName) {
-  if (!this.canAccessFeature(featureName)) {
-    return false;
+  async findById(subscriptionId) {
+    const doc = await this.collection.doc(subscriptionId).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() };
   }
-  
-  switch (featureName) {
-    case 'privateChatAccess':
-      return this.usage.privateChatsUsed < this.features.maxPrivateChats;
-    case 'travelPartnerRequests':
-      return this.usage.travelRequestsUsed < this.features.travelPartnerRequests;
-    default:
-      return true;
+
+  async findByUserId(userId) {
+    const snapshot = await this.collection.where('user', '==', userId).limit(1).get();
+    if (snapshot.empty) return null;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
   }
-};
 
-// Method to increment usage
-subscriptionSchema.methods.incrementUsage = function(featureName) {
-  switch (featureName) {
-    case 'privateChats':
-      this.usage.privateChatsUsed += 1;
-      break;
-    case 'travelRequests':
-      this.usage.travelRequestsUsed += 1;
-      break;
+  async update(subscriptionId, updateData) {
+    const subscriptionRef = this.collection.doc(subscriptionId);
+    const updates = { ...updateData, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+    await subscriptionRef.update(updates);
+    return this.findById(subscriptionId);
   }
-  return this.save();
-};
 
-// Method to reset monthly usage
-subscriptionSchema.methods.resetMonthlyUsage = function() {
-  this.usage.privateChatsUsed = 0;
-  this.usage.travelRequestsUsed = 0;
-  this.usage.lastResetDate = new Date();
-  return this.save();
-};
-
-// Method to upgrade subscription
-subscriptionSchema.methods.upgrade = function(newPlan, endDate) {
-  this.plan = newPlan;
-  this.endDate = endDate;
-  this.status = 'active';
-  
-  // Update features based on plan
-  this.updateFeatures();
-  
-  return this.save();
-};
-
-// Method to cancel subscription
-subscriptionSchema.methods.cancel = function(reason, cancelAtPeriodEnd = true) {
-  this.cancellation = {
-    cancelledAt: new Date(),
-    reason: reason,
-    cancelAtPeriodEnd: cancelAtPeriodEnd
-  };
-  
-  if (!cancelAtPeriodEnd) {
-    this.status = 'cancelled';
-    this.endDate = new Date();
+  async delete(subscriptionId) {
+    await this.collection.doc(subscriptionId).delete();
+    return true;
   }
-  
-  this.autoRenew = false;
-  return this.save();
-};
 
-// Method to add billing record
-subscriptionSchema.methods.addBillingRecord = function(billingData) {
-  this.billingHistory.push({
-    amount: billingData.amount,
-    currency: billingData.currency || 'USD',
-    status: billingData.status,
-    invoiceId: billingData.invoiceId,
-    paymentDate: billingData.paymentDate || new Date(),
-    description: billingData.description,
-    failureReason: billingData.failureReason
-  });
-  
-  return this.save();
-};
-
-// Method to update features based on plan type
-subscriptionSchema.methods.updateFeatures = function() {
-  switch (this.plan.type) {
-    case 'free':
-      this.features = {
+  getFeaturesForPlan(planType) {
+    const features = {
+      free: {
         privateChatAccess: false,
         maxPrivateChats: 0,
         travelPartnerRequests: 1,
@@ -327,11 +93,9 @@ subscriptionSchema.methods.updateFeatures = function() {
         advancedFilters: false,
         profileBoost: false,
         fileUploadLimit: 5,
-        customDestinations: false
-      };
-      break;
-    case 'pro':
-      this.features = {
+        customDestinations: false,
+      },
+      pro: {
         privateChatAccess: true,
         maxPrivateChats: 10,
         travelPartnerRequests: 5,
@@ -339,55 +103,72 @@ subscriptionSchema.methods.updateFeatures = function() {
         advancedFilters: true,
         profileBoost: false,
         fileUploadLimit: 25,
-        customDestinations: true
-      };
-      break;
-    case 'premium':
-      this.features = {
+        customDestinations: true,
+      },
+      premium: {
         privateChatAccess: true,
-        maxPrivateChats: -1, // Unlimited
-        travelPartnerRequests: -1, // Unlimited
+        maxPrivateChats: -1,
+        travelPartnerRequests: -1,
         prioritySupport: true,
         advancedFilters: true,
         profileBoost: true,
         fileUploadLimit: 100,
-        customDestinations: true
-      };
-      break;
+        customDestinations: true,
+      },
+    };
+    return features[planType] || features.free;
   }
-};
 
-// Static method to find expiring subscriptions
-subscriptionSchema.statics.findExpiring = function(days = 7) {
-  const futureDate = new Date();
-  futureDate.setDate(futureDate.getDate() + days);
-  
-  return this.find({
-    status: 'active',
-    endDate: {
-      $gte: new Date(),
-      $lte: futureDate
-    }
-  }).populate('user', 'email firstName lastName');
-};
-
-// Static method to find subscriptions due for billing
-subscriptionSchema.statics.findDueForBilling = function() {
-  return this.find({
-    status: 'active',
-    autoRenew: true,
-    nextBillingDate: {
-      $lte: new Date()
-    }
-  }).populate('user', 'email firstName lastName');
-};
-
-// Pre-save middleware to set features
-subscriptionSchema.pre('save', function(next) {
-  if (this.isModified('plan.type')) {
-    this.updateFeatures();
+  isActive(subscription) {
+    return subscription.status === 'active' && (!subscription.endDate || new Date(subscription.endDate) > new Date());
   }
-  next();
-});
 
-export default mongoose.model('Subscription', subscriptionSchema);
+  canAccessFeature(subscription, featureName) {
+    if (!this.isActive(subscription)) return false;
+    return subscription.features[featureName] || false;
+  }
+
+  async incrementUsage(subscriptionId, featureName) {
+    const subscription = await this.findById(subscriptionId);
+    if (!subscription) throw new Error('Subscription not found');
+
+    const updates = { usage: { ...subscription.usage } };
+    switch (featureName) {
+      case 'privateChats':
+        updates.usage.privateChatsUsed = (subscription.usage.privateChatsUsed || 0) + 1;
+        break;
+      case 'travelRequests':
+        updates.usage.travelRequestsUsed = (subscription.usage.travelRequestsUsed || 0) + 1;
+        break;
+    }
+    await this.update(subscriptionId, updates);
+  }
+
+  async upgrade(subscriptionId, newPlan, endDate) {
+    const features = this.getFeaturesForPlan(newPlan.type);
+    await this.update(subscriptionId, { plan: newPlan, endDate, status: 'active', features });
+    return this.findById(subscriptionId);
+  }
+
+  async cancel(subscriptionId, reason, cancelAtPeriodEnd = true) {
+    const updates = {
+      cancellation: {
+        cancelledAt: admin.firestore.Timestamp.now(),
+        reason,
+        cancelAtPeriodEnd,
+      },
+      autoRenew: false,
+    };
+
+    if (!cancelAtPeriodEnd) {
+      updates.status = 'cancelled';
+      updates.endDate = admin.firestore.Timestamp.now();
+    }
+
+    await this.update(subscriptionId, updates);
+    return this.findById(subscriptionId);
+  }
+}
+
+const subscriptionService = new SubscriptionService();
+export default subscriptionService;

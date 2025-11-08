@@ -1,239 +1,175 @@
-import mongoose from 'mongoose';
+import { db, admin } from '../config/database.js';
 
-const chatRoomSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Chat room name is required'],
-    trim: true,
-    maxlength: [100, 'Chat room name cannot exceed 100 characters']
-  },
-  description: {
-    type: String,
-    maxlength: [500, 'Description cannot exceed 500 characters'],
-    default: ''
-  },
-  type: {
-    type: String,
-    enum: ['public', 'private', 'travel_partner'],
-    required: true,
-    default: 'public'
-  },
-  
-  // For travel destination-based rooms
+const COLLECTION_NAME = 'chatRooms';
+
+const createChatRoomData = (data) => ({
+  name: data.name || '',
+  description: data.description || '',
+  type: data.type || 'public',
   destination: {
-    country: String,
-    city: String,
-    region: String
+    country: data.destination?.country || null,
+    city: data.destination?.city || null,
+    region: data.destination?.region || null,
   },
-  
-  // Room settings
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  maxMembers: {
-    type: Number,
-    default: 1000 // For public rooms
-  },
-  
-  // Members and permissions
-  members: [{
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-    role: {
-      type: String,
-      enum: ['member', 'moderator', 'admin'],
-      default: 'member'
-    },
-    joinedAt: {
-      type: Date,
-      default: Date.now
-    },
-    lastReadAt: {
-      type: Date,
-      default: Date.now
+  isActive: data.isActive !== undefined ? data.isActive : true,
+  maxMembers: data.maxMembers || 1000,
+  members: data.members || [],
+  createdBy: data.createdBy || null,
+  subscriptionRequired: data.subscriptionRequired || false,
+  messageCount: data.messageCount || 0,
+  lastActivity: data.lastActivity || admin.firestore.FieldValue.serverTimestamp(),
+  lastMessage: data.lastMessage || null,
+  avatar: data.avatar || null,
+  tags: data.tags || [],
+  rules: data.rules || [],
+  createdAt: data.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+});
+
+class ChatRoomService {
+  constructor() {
+    this.collection = db.collection(COLLECTION_NAME);
+  }
+
+  async create(roomData) {
+    const roomRef = this.collection.doc();
+    const room = createChatRoomData({ ...roomData, id: roomRef.id });
+    await roomRef.set(room);
+    return { id: roomRef.id, ...room };
+  }
+
+  async findById(roomId) {
+    const doc = await this.collection.doc(roomId).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() };
+  }
+
+  async update(roomId, updateData) {
+    const roomRef = this.collection.doc(roomId);
+    const updates = {
+      ...updateData,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    await roomRef.update(updates);
+    return this.findById(roomId);
+  }
+
+  async delete(roomId) {
+    await this.collection.doc(roomId).delete();
+    return true;
+  }
+
+  async findByType(type, options = {}) {
+    const { limit = 50, offset = 0 } = options;
+    let query = this.collection
+      .where('type', '==', type)
+      .where('isActive', '==', true)
+      .orderBy('lastActivity', 'desc');
+    
+    if (limit) query = query.limit(limit);
+    if (offset) query = query.offset(offset);
+    
+    const snapshot = await query.get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async findByDestination(country, city = null) {
+    let query = this.collection
+      .where('type', '==', 'public')
+      .where('isActive', '==', true);
+    
+    if (country) {
+      query = query.where('destination.country', '==', country);
     }
-  }],
-  
-  // Room creator/owner
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  
-  // For private rooms (subscription required)
-  subscriptionRequired: {
-    type: Boolean,
-    default: false
-  },
-  
-  // Room statistics
-  messageCount: {
-    type: Number,
-    default: 0
-  },
-  lastActivity: {
-    type: Date,
-    default: Date.now
-  },
-  lastMessage: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Message'
-  },
-  
-  // Room image/avatar
-  avatar: {
-    type: String,
-    default: null
-  },
-  
-  // Tags for better discovery
-  tags: [{
-    type: String,
-    lowercase: true,
-    trim: true
-  }],
-  
-  // Room rules or guidelines
-  rules: [{
-    type: String,
-    maxlength: [200, 'Rule cannot exceed 200 characters']
-  }]
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
-
-// Indexes for better performance
-chatRoomSchema.index({ type: 1, isActive: 1 });
-chatRoomSchema.index({ 'destination.country': 1 });
-chatRoomSchema.index({ 'destination.city': 1 });
-chatRoomSchema.index({ tags: 1 });
-chatRoomSchema.index({ createdBy: 1 });
-chatRoomSchema.index({ 'members.user': 1 });
-chatRoomSchema.index({ lastActivity: -1 });
-
-// Virtual for member count
-chatRoomSchema.virtual('memberCount').get(function() {
-  return this.members.length;
-});
-
-// Virtual for online members count (would need to be populated with user data)
-chatRoomSchema.virtual('onlineMemberCount').get(function() {
-  return this.members.filter(member => 
-    member.user && member.user.isOnline
-  ).length;
-});
-
-// Method to add member to room
-chatRoomSchema.methods.addMember = function(userId, role = 'member') {
-  const existingMember = this.members.find(
-    member => member.user.toString() === userId.toString()
-  );
-  
-  if (existingMember) {
-    return false; // Member already exists
+    if (city) {
+      query = query.where('destination.city', '==', city);
+    }
+    
+    const snapshot = await query.orderBy('lastActivity', 'desc').get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   }
-  
-  if (this.members.length >= this.maxMembers) {
-    throw new Error('Chat room is full');
+
+  async findPopular(limit = 10) {
+    const snapshot = await this.collection
+      .where('type', '==', 'public')
+      .where('isActive', '==', true)
+      .orderBy('messageCount', 'desc')
+      .limit(limit)
+      .get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   }
-  
-  this.members.push({
-    user: userId,
-    role: role,
-    joinedAt: new Date(),
-    lastReadAt: new Date()
-  });
-  
-  return this.save();
-};
 
-// Method to remove member from room
-chatRoomSchema.methods.removeMember = function(userId) {
-  this.members = this.members.filter(
-    member => member.user.toString() !== userId.toString()
-  );
-  return this.save();
-};
-
-// Method to update member's last read timestamp
-chatRoomSchema.methods.updateMemberLastRead = function(userId) {
-  const member = this.members.find(
-    member => member.user.toString() === userId.toString()
-  );
-  
-  if (member) {
-    member.lastReadAt = new Date();
-    return this.save();
+  async addMember(roomId, userId, role = 'member') {
+    const room = await this.findById(roomId);
+    if (!room) throw new Error('Chat room not found');
+    
+    const existingMember = room.members.find(m => m.user === userId);
+    if (existingMember) return room;
+    
+    if (room.members.length >= room.maxMembers) {
+      throw new Error('Chat room is full');
+    }
+    
+    const roomRef = this.collection.doc(roomId);
+    await roomRef.update({
+      members: admin.firestore.FieldValue.arrayUnion({
+        user: userId,
+        role: role,
+        joinedAt: admin.firestore.Timestamp.now(),
+        lastReadAt: admin.firestore.Timestamp.now()
+      }),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    return this.findById(roomId);
   }
-  
-  return false;
-};
 
-// Method to check if user is member
-chatRoomSchema.methods.isMember = function(userId) {
-  return this.members.some(
-    member => member.user.toString() === userId.toString()
-  );
-};
+  async removeMember(roomId, userId) {
+    const room = await this.findById(roomId);
+    if (!room) throw new Error('Chat room not found');
+    
+    const updatedMembers = room.members.filter(m => m.user !== userId);
+    await this.update(roomId, { members: updatedMembers });
+    return this.findById(roomId);
+  }
 
-// Method to get member role
-chatRoomSchema.methods.getMemberRole = function(userId) {
-  const member = this.members.find(
-    member => member.user.toString() === userId.toString()
-  );
-  return member ? member.role : null;
-};
-
-// Method to check if user can access room
-chatRoomSchema.methods.canUserAccess = function(user) {
-  // Public rooms are accessible to all
-  if (this.type === 'public') {
+  async updateMemberLastRead(roomId, userId) {
+    const room = await this.findById(roomId);
+    if (!room) return false;
+    
+    const updatedMembers = room.members.map(m => {
+      if (m.user === userId) {
+        return { ...m, lastReadAt: admin.firestore.Timestamp.now() };
+      }
+      return m;
+    });
+    
+    await this.update(roomId, { members: updatedMembers });
     return true;
   }
-  
-  // Private rooms require subscription
-  if (this.type === 'private' && this.subscriptionRequired) {
-    return user.canAccessPrivateChat();
-  }
-  
-  // Travel partner rooms are accessible to all but limited
-  if (this.type === 'travel_partner') {
-    return true;
-  }
-  
-  return false;
-};
 
-// Static method to find public rooms by destination
-chatRoomSchema.statics.findByDestination = function(country, city = null) {
-  const query = {
-    type: 'public',
-    isActive: true,
-    'destination.country': new RegExp(country, 'i')
-  };
-  
-  if (city) {
-    query['destination.city'] = new RegExp(city, 'i');
+  isMember(room, userId) {
+    return room.members.some(m => m.user === userId);
   }
-  
-  return this.find(query).sort({ lastActivity: -1 });
-};
 
-// Static method to find popular rooms
-chatRoomSchema.statics.findPopular = function(limit = 10) {
-  return this.find({ 
-    type: 'public', 
-    isActive: true 
-  })
-  .sort({ memberCount: -1, lastActivity: -1 })
-  .limit(limit);
-};
+  getMemberRole(room, userId) {
+    const member = room.members.find(m => m.user === userId);
+    return member ? member.role : null;
+  }
 
-export default mongoose.model('ChatRoom', chatRoomSchema);
+  async incrementMessageCount(roomId) {
+    const roomRef = this.collection.doc(roomId);
+    await roomRef.update({
+      messageCount: admin.firestore.FieldValue.increment(1),
+      lastActivity: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  getMemberCount(room) {
+    return room.members.length;
+  }
+}
+
+const chatRoomService = new ChatRoomService();
+export default chatRoomService;

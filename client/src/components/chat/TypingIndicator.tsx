@@ -14,15 +14,15 @@ interface TypingIndicatorProps {
 }
 
 const TypingIndicator: React.FC<TypingIndicatorProps> = ({ users }) => {
-  if (users.length === 0) return null;
+  if (!users || users.length === 0) return null;
 
   const getTypingText = () => {
     if (users.length === 1) {
-      return `${users[0].firstName} is typing...`;
+      return `${users[0]?.firstName || 'Someone'} is typing...`;
     } else if (users.length === 2) {
-      return `${users[0].firstName} and ${users[1].firstName} are typing...`;
+      return `${users[0]?.firstName || 'Someone'} and ${users[1]?.firstName || 'someone'} are typing...`;
     } else {
-      return `${users[0].firstName} and ${users.length - 1} others are typing...`;
+      return `${users[0]?.firstName || 'Someone'} and ${users.length - 1} others are typing...`;
     }
   };
 
@@ -30,10 +30,10 @@ const TypingIndicator: React.FC<TypingIndicatorProps> = ({ users }) => {
     <div className="flex items-center gap-3 p-3 text-sm text-muted-foreground">
       <div className="flex -space-x-2">
         {users.slice(0, 3).map((user) => (
-          <Avatar key={user.id} className="h-6 w-6 border-2 border-background">
-            <AvatarImage src={user.avatar} />
+          <Avatar key={user?.id || Math.random()} className="h-6 w-6 border-2 border-background">
+            <AvatarImage src={user?.avatar} />
             <AvatarFallback className="text-xs">
-              {user.firstName[0]}{user.lastName[0]}
+              {user?.firstName?.[0] || '?'}{user?.lastName?.[0] || '?'}
             </AvatarFallback>
           </Avatar>
         ))}

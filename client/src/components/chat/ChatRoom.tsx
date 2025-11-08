@@ -1,361 +1,279 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ArrowLeft, Users, Settings, Crown } from 'lucide-react';
-import ChatMessage from './ChatMessage';
-import ChatInput from './ChatInput';
-import TypingIndicator from './TypingIndicator';
-import ModerationDialog from './ModerationDialog';
+import { useToast } from '@/components/ui/use-toast';
+import { ArrowLeft, Crown, Settings, Users } from 'lucide-react';
+
+// Import necessary types and services
+import { User, Message, Room } from '@/types/chat';
+import { socketService } from '@/lib/socket';
 import { chatAPI } from '@/lib/api';
-import socketService from '@/lib/socket';
-
-interface User {
-  id: string;
-  username: string;
-  firstName: string;
-  lastName: string;
-  avatar?: string;
-  isOnline?: boolean;
-  role?: 'user' | 'moderator' | 'admin';
-}
-
-interface Message {
-  id: string;
-  content: string;
-  type: 'text' | 'image' | 'file' | 'system' | 'travel_request';
-  sender: User;
-  createdAt: string;
-  reactions?: Array<{
-    user: User;
-    emoji: string;
-    createdAt: string;
-  }>;
-  replyTo?: {
-    id: string;
-    content: string;
-    sender: User;
-  };
-}
-
-interface Room {
-  id: string;
-  name: string;
-  description?: string;
-  type: 'public' | 'private' | 'travel_partner';
-  memberCount: number;
-  onlineMembers?: User[];
-  destination?: {
-    country: string;
-    city?: string;
-    region?: string;
-  };
-}
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import ChatMessage from '@/components/chat/ChatMessage';
+import ChatInput from '@/components/chat/ChatInput';
+import TypingIndicator from '@/components/chat/TypingIndicator';
+import ModerationDialog from '@/components/chat/ModerationDialog';
 
 const ChatRoom: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+  
+  // State with proper types
   const [room, setRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [typingUsers, setTypingUsers] = useState<User[]>([]);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [userRole, setUserRole] = useState<'user' | 'moderator' | 'admin'>('user');
   const [pinnedMessages, setPinnedMessages] = useState<string[]>([]);
   const [moderationDialog, setModerationDialog] = useState<{
-    type: 'report' | 'moderate';
     isOpen: boolean;
+    type: 'report' | 'moderate';
     messageId: string | null;
   }>({
-    type: 'report',
     isOpen: false,
+    type: 'report',
     messageId: null
   });
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 
-  useEffect(() => {
+  // Helper functions
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  // Socket event handlers
+  const setupSocketListeners = useCallback(() => {
     if (!roomId) return;
 
-    loadRoomData();
-    setupSocketListeners();
+    const handleNewMessage = (message: Message) => {
+      setMessages(prev => [...prev, message]);
+      scrollToBottom();
+    };
 
-    return () => {
-      cleanupSocketListeners();
-      if (roomId) {
-        socketService.leaveRoom(roomId);
+    const handleUserTyping = (user: User) => {
+      setTypingUsers(prev => 
+        prev.some(u => u.id === user.id) ? prev : [...prev, user]
+      );
+    };
+
+    const handleUserStoppedTyping = (userId: string) => {
+      setTypingUsers(prev => prev.filter(user => user.id !== userId));
+    };
+
+    const handleMessagePinToggled = (data: { messageId: string; isPinned: boolean }) => {
+      if (data.isPinned) {
+        setPinnedMessages(prev => [...prev, data.messageId]);
+      } else {
+        setPinnedMessages(prev => prev.filter(id => id !== data.messageId));
       }
     };
-  }, [roomId]);
+
+    // Add all socket listeners
+    socketService.on('new_message', handleNewMessage);
+    socketService.on('user_typing', handleUserTyping);
+    socketService.on('user_stopped_typing', handleUserStoppedTyping);
+    socketService.on('message_pin_toggled', handleMessagePinToggled);
+
+    // Cleanup function
+    return () => {
+      socketService.off('new_message', handleNewMessage);
+      socketService.off('user_typing', handleUserTyping);
+      socketService.off('user_stopped_typing', handleUserStoppedTyping);
+      socketService.off('message_pin_toggled', handleMessagePinToggled);
+    };
+  }, [roomId, scrollToBottom]);
+
+  // Load room data
+  useEffect(() => {
+    let mounted = true;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const loadRoomData = async () => {
+      if (!roomId || !mounted) return;
+
+      try {
+        setLoading(true);
+        
+        // Get room details
+        const roomResponse = await chatAPI.getRoomDetails(roomId);
+        if (!roomResponse.data?.data?.room) {
+          throw new Error('Room not found');
+        }
+
+        const roomData = roomResponse.data.data.room;
+        
+        // Socket connection is managed by AuthContext
+        // Wait a bit if socket is not connected yet (AuthContext might still be connecting)
+        if (!socketService.isConnected()) {
+          console.log('[ChatRoom] Socket not connected, waiting for AuthContext to establish connection...');
+          
+          // Wait up to 5 seconds for socket to connect
+          let waitTime = 0;
+          const maxWait = 5000;
+          const checkInterval = 200;
+          
+          while (!socketService.isConnected() && waitTime < maxWait) {
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+            waitTime += checkInterval;
+          }
+          
+          if (!socketService.isConnected()) {
+            throw new Error('Socket connection not established. Please refresh the page and try again.');
+          }
+          
+          console.log('[ChatRoom] Socket connected after waiting');
+        }
+
+        // Join room
+        console.log('[ChatRoom] Joining room:', roomId);
+        const socketData = await socketService.joinRoom(roomId);
+        if (!socketData?.room) {
+          throw new Error('Failed to join room');
+        }
+
+        // Update state
+        if (mounted) {
+          setRoom({
+            ...roomData,
+            onlineMembers: socketData.room.onlineMembers || roomData.onlineMembers || []
+          });
+          setMessages(socketData.messages || []);
+          setupSocketListeners();
+        }
+      } catch (error) {
+        console.error('Error loading room:', error);
+        
+        if (mounted) {
+          setError(error instanceof Error ? error.message : 'Failed to load room');
+          toast({
+            title: "Error",
+            description: error instanceof Error ? error.message : 'Failed to load room'
+          });
+          
+          // Retry logic
+          if (retryCount < maxRetries) {
+            retryCount++;
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
+            console.log(`Retrying in ${delay}ms...`);
+            setTimeout(loadRoomData, delay);
+            return;
+          }
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadRoomData();
+
+    return () => {
+      mounted = false;
+      if (roomId) {
+        socketService.leaveRoom(roomId).catch(console.error);
+      }
+    };
+  }, [roomId, setupSocketListeners]);
 
   // Set user role based on room data
   useEffect(() => {
     if (room && room.onlineMembers) {
-      const userMember = room.onlineMembers.find(m => m.id === currentUser.id);
-      if (userMember?.role === 'admin' || userMember?.role === 'moderator') {
-        setUserRole(userMember.role);
+      const currentUserId = localStorage.getItem('userId');
+      if (currentUserId) {
+        const userMember = room.onlineMembers.find(m => m.id === currentUserId);
+        if (userMember?.role === 'admin' || userMember?.role === 'moderator') {
+          setUserRole(userMember.role);
+        }
       }
     }
   }, [room]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // In ChatRoom.tsx, add reconnection handling
+useEffect(() => {
+  const handleDisconnect = () => {
+    console.log('Socket disconnected, attempting to reconnect...');
+    // Add visual feedback to user
+    toast({
+      title: "Connection Lost",
+      description: "Reconnecting..."
+    });
+  };
 
-  const loadRoomData = async () => {
-    if (!roomId) return;
-
-    try {
-      setLoading(true);
-      
-      // Get room details
-      const roomResponse = await chatAPI.getRoomDetails(roomId);
-      const roomData = roomResponse.data.data.room;
-      
-      setRoom(roomData);
-
-      // Join room via socket
-      const socketData = await socketService.joinRoom(roomId);
-      setMessages(socketData.messages || []);
-      
-      if (socketData.room.onlineMembers) {
-        setRoom(prev => prev ? { ...prev, onlineMembers: socketData.room.onlineMembers } : null);
-      }
-
-    } catch (err: any) {
-      console.error('Failed to load room:', err);
-      setError(err.response?.data?.message || 'Failed to load chat room');
-    } finally {
-      setLoading(false);
+  const handleReconnect = () => {
+    toast({
+      title: "Reconnected!",
+      description: "Connection restored successfully"
+    });
+    // Rejoin room if needed
+    if (roomId) {
+      socketService.joinRoom(roomId).catch(console.error);
     }
   };
 
-  const setupSocketListeners = () => {
-    socketService.onNewMessage(handleNewMessage);
-    socketService.onUserJoinedRoom(handleUserJoined);
-    socketService.onUserLeftRoom(handleUserLeft);
-    socketService.onUserTyping(handleUserTyping);
-    socketService.onUserStoppedTyping(handleUserStoppedTyping);
-    socketService.onUserStatusChange(handleUserStatusChange);
-    socketService.onReactionAdded(handleReactionAdded);
-    
-    // Moderation event listeners
-    socketService.onMessageDeleted(handleMessageDeleted);
-    socketService.onMessageModerated(handleMessageModerated);
-    socketService.onMessagePinToggled(handleMessagePinToggled);
-    socketService.onNewReport(handleNewReport);
+  socketService.on('disconnect', handleDisconnect);
+  socketService.on('reconnect', handleReconnect);
+
+  return () => {
+    socketService.off('disconnect', handleDisconnect);
+    socketService.off('reconnect', handleReconnect);
   };
+}, [roomId]); // Remove toast from dependencies as it's stable
 
-  const cleanupSocketListeners = () => {
-    socketService.off('new_message');
-    socketService.off('user_joined_room');
-    socketService.off('user_left_room');
-    socketService.off('user_typing');
-    socketService.off('user_stopped_typing');
-    socketService.off('user_status_change');
-    socketService.off('reaction_added');
-    socketService.off('message_deleted');
-    socketService.off('message_moderated');
-    socketService.off('message_pin_toggled');
-    socketService.off('new_report');
-  };
-
-  const handleNewMessage = (message: Message) => {
-    setMessages(prev => [...prev, message]);
-  };
-
-  const handleUserJoined = (data: any) => {
-    setMessages(prev => [...prev, {
-      id: `system-${Date.now()}`,
-      content: `${data.user.firstName} ${data.user.lastName} joined the room`,
-      type: 'system' as const,
-      sender: data.user,
-      createdAt: new Date().toISOString()
-    }]);
-
-    // Update online members
-    setRoom(prev => {
-      if (!prev) return prev;
-      const onlineMembers = prev.onlineMembers || [];
-      if (!onlineMembers.find(u => u.id === data.user.id)) {
-        return { ...prev, onlineMembers: [...onlineMembers, data.user] };
-      }
-      return prev;
-    });
-  };
-
-  const handleUserLeft = (data: any) => {
-    setMessages(prev => [...prev, {
-      id: `system-${Date.now()}`,
-      content: `${data.user.username} left the room`,
-      type: 'system' as const,
-      sender: data.user,
-      createdAt: new Date().toISOString()
-    }]);
-
-    // Update online members
-    setRoom(prev => {
-      if (!prev) return prev;
-      const onlineMembers = (prev.onlineMembers || []).filter(u => u.id !== data.user.id);
-      return { ...prev, onlineMembers };
-    });
-  };
-
-  const handleUserTyping = (data: any) => {
-    setTypingUsers(prev => {
-      if (!prev.find(u => u.id === data.user.id)) {
-        return [...prev, data.user];
-      }
-      return prev;
-    });
-  };
-
-  const handleUserStoppedTyping = (data: any) => {
-    setTypingUsers(prev => prev.filter(u => u.id !== data.user.id));
-  };
-
-  const handleUserStatusChange = (data: any) => {
-    setRoom(prev => {
-      if (!prev) return prev;
-      const onlineMembers = prev.onlineMembers || [];
-      
-      if (data.status === 'online') {
-        if (!onlineMembers.find(u => u.id === data.user.id)) {
-          return { ...prev, onlineMembers: [...onlineMembers, data.user] };
-        }
-      } else {
-        return { ...prev, onlineMembers: onlineMembers.filter(u => u.id !== data.user.id) };
-      }
-      
-      return prev;
-    });
-  };
-
-  const handleReactionAdded = (data: any) => {
-    setMessages(prev => prev.map(msg => {
-      if (msg.id === data.messageId) {
-        const reactions = msg.reactions || [];
-        const existingReaction = reactions.find(r => r.user.id === data.user.id);
-        
-        if (existingReaction) {
-          // Update existing reaction
-          return {
-            ...msg,
-            reactions: reactions.map(r => 
-              r.user.id === data.user.id ? { ...r, emoji: data.emoji } : r
-            )
-          };
-        } else {
-          // Add new reaction
-          return {
-            ...msg,
-            reactions: [...reactions, {
-              user: data.user,
-              emoji: data.emoji,
-              createdAt: new Date().toISOString()
-            }]
-          };
-        }
-      }
-      return msg;
-    }));
-  };
-
-  const handleSendMessage = (content: string, replyToId?: string) => {
+  // Message handlers
+  const handleSendMessage = useCallback((content: string, replyToId?: string) => {
     if (!roomId) return;
-    
     socketService.sendMessage(roomId, content, 'text', replyToId);
     setReplyTo(null);
-  };
+  }, [roomId]);
 
-  const handleReply = (message: Message) => {
+  const handleReply = useCallback((message: Message) => {
     setReplyTo(message);
-  };
+  }, []);
 
-  const handleReaction = (messageId: string, emoji: string) => {
+  const handleReaction = useCallback((messageId: string, emoji: string) => {
     socketService.addReaction(messageId, emoji);
-  };
+  }, []);
 
-  const handleTypingStart = () => {
+  const handleTypingStart = useCallback(() => {
     if (roomId) {
       socketService.startTyping(roomId);
     }
-  };
+  }, [roomId]);
 
-  const handleTypingStop = () => {
+  const handleTypingStop = useCallback(() => {
     if (roomId) {
       socketService.stopTyping(roomId);
     }
-  };
+  }, [roomId]);
 
   // Moderation handlers
-  const handleMessageDeleted = (data: any) => {
-    setMessages(prev => 
-      prev.map(msg => 
-        msg.id === data.messageId 
-          ? { ...msg, isDeleted: true, deletedBy: data.deletedBy }
-          : msg
-      )
-    );
-  };
-
-  const handleMessageModerated = (data: any) => {
-    setMessages(prev => 
-      prev.map(msg => 
-        msg.id === data.messageId 
-          ? { 
-              ...msg, 
-              isModerated: true, 
-              moderatedBy: data.moderatedBy,
-              moderationReason: data.reason,
-              content: '[Message moderated]'
-            }
-          : msg
-      )
-    );
-  };
-
-  const handleMessagePinToggled = (data: any) => {
-    if (data.isPinned) {
-      setPinnedMessages(prev => [...prev, data.messageId]);
-    } else {
-      setPinnedMessages(prev => prev.filter(id => id !== data.messageId));
-    }
-  };
-
-  const handleNewReport = (data: any) => {
-    if (userRole === 'moderator' || userRole === 'admin') {
-      // Show notification to moderators
-      console.log('New report:', data);
-      // TODO: Implement moderation notification UI
-    }
-  };
-
-  // Message action handlers
-  const handleDeleteMessage = (message: Message) => {
+  const handleDeleteMessage = useCallback((message: Message) => {
     socketService.deleteMessage(message.id);
-  };
+  }, []);
 
-  const handleReportMessage = (message: Message) => {
+  const handleReportMessage = useCallback((message: Message) => {
     setModerationDialog({
       type: 'report',
       isOpen: true,
       messageId: message.id
     });
-  };
+  }, []);
 
-  const handleModerateMessage = (message: Message) => {
+  const handleModerateMessage = useCallback((message: Message) => {
     setModerationDialog({
       type: 'moderate',
       isOpen: true,
       messageId: message.id
     });
-  };
+  }, []);
 
-  const handleModerationSubmit = (reason: string, details?: string) => {
+  const handleModerationSubmit = useCallback((reason: string, details: string = '') => {
     if (!moderationDialog.messageId) return;
 
     if (moderationDialog.type === 'report') {
@@ -364,24 +282,16 @@ const ChatRoom: React.FC = () => {
       socketService.moderateMessage(moderationDialog.messageId, reason);
     }
 
-    setModerationDialog({
-      type: 'report',
-      isOpen: false,
-      messageId: null
-    });
-  };
+    setModerationDialog(prev => ({ ...prev, isOpen: false }));
+  }, [moderationDialog.messageId, moderationDialog.type]);
 
-  const handlePinMessage = (message: Message) => {
+  const handlePinMessage = useCallback((message: Message) => {
     socketService.togglePinMessage(message.id);
-  };
+  }, []);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     navigate('/chat');
-  };
+  }, [navigate]);
 
   if (loading) {
     return (
@@ -460,12 +370,12 @@ const ChatRoom: React.FC = () => {
 
       {/* Messages */}
       <ScrollArea className="flex-1">
-        <div className="space-y-1">
+        <div className="space-y-1 p-4">
           {messages.map((message) => (
             <ChatMessage
               key={message.id}
               message={message}
-              currentUserId={currentUser.id}
+              currentUserId={localStorage.getItem('userId') || ''}
               onReply={handleReply}
               onReaction={handleReaction}
               onDelete={handleDeleteMessage}
@@ -486,14 +396,16 @@ const ChatRoom: React.FC = () => {
       </ScrollArea>
 
       {/* Input */}
-      <ChatInput
-        onSendMessage={handleSendMessage}
-        onTypingStart={handleTypingStart}
-        onTypingStop={handleTypingStop}
-        replyTo={replyTo}
-        onCancelReply={() => setReplyTo(null)}
-        placeholder={`Message ${room.name}...`}
-      />
+      <div className="p-4 border-t">
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          onTypingStart={handleTypingStart}
+          onTypingStop={handleTypingStop}
+          replyTo={replyTo}
+          onCancelReply={() => setReplyTo(null)}
+          placeholder={`Message ${room.name}...`}
+        />
+      </div>
 
       {/* Moderation Dialog */}
       <ModerationDialog

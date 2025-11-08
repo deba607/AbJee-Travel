@@ -5,7 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import connectDB from './config/database.js';
+import initializeFirestore from './config/database.js';
 import authRoutes from './routes/auth.js';
 import chatRoutes from './routes/chat.js';
 import userRoutes from './routes/users.js';
@@ -24,20 +24,39 @@ const server = createServer(app);
 // Socket.IO setup with CORS
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL,
+    origin: ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"],
     methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  },
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 60 * 1000, // 1 minutes
+    skipMiddlewares: true,
+  }, // Disable state recovery for now
+  pingTimeout: 30000, // 30 seconds
+  pingInterval: 10000, // 10 seconds
+  transports: ['websocket', 'polling'],
+  allowEIO3: true, // Allow Engine.IO 3 compatibility
+  maxHttpBufferSize: 1e6, // 1 MB
+  connectTimeout: 45000, // 45 seconds
+  allowUpgrades: true,
+  httpCompression: true,
+  serveClient: false, // Don't serve client files
+  perMessageDeflate: {
+    threshold: 1024, // Only compress messages larger than 1KB
   }
 });
 
-// Connect to database
-connectDB();
+// Initialize Firebase Firestore
+initializeFirestore();
 
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CLIENT_URL,
-  credentials: true
+  origin: ["http://localhost:5173", "http://localhost:5174", "http://localhost:5176"],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 // Rate limiting

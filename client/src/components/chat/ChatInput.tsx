@@ -34,8 +34,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Common emojis for quick access
+  const commonEmojis = ['😊', '😂', '❤️', '👍', '🎉', '😍', '🤔', '😢', '🔥', '✨', '🙏', '💯'];
 
   useEffect(() => {
     // Auto-focus the textarea
@@ -43,6 +49,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
       textareaRef.current.focus();
     }
   }, []);
+
+  useEffect(() => {
+    // Close emoji picker when clicking outside
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showEmojiPicker]);
 
   useEffect(() => {
     // Auto-resize textarea
@@ -118,6 +141,49 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  const handleAttachmentClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      // TODO: Handle file upload
+      console.log('File selected:', file.name);
+      alert(`File attachment feature coming soon!\nSelected: ${file.name}`);
+      // Reset the input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleEmojiClick = (emoji: string) => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newMessage = message.substring(0, start) + emoji + message.substring(end);
+      setMessage(newMessage);
+      
+      // Set cursor position after emoji
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+        textarea.focus();
+      }, 0);
+    } else {
+      setMessage(message + emoji);
+    }
+    setShowEmojiPicker(false);
+  };
+
+  const toggleEmojiPicker = () => {
+    setShowEmojiPicker(!showEmojiPicker);
+  };
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -167,6 +233,39 @@ const ChatInput: React.FC<ChatInputProps> = ({
             rows={1}
           />
           
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+            onChange={handleFileSelect}
+          />
+          
+          {/* Emoji Picker Popup */}
+          {showEmojiPicker && (
+            <div 
+              ref={emojiPickerRef}
+              className="absolute bottom-12 right-2 bg-popover border rounded-lg shadow-lg p-2 z-10"
+            >
+              <div className="grid grid-cols-6 gap-1">
+                {commonEmojis.map((emoji, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => handleEmojiClick(emoji)}
+                    className="text-2xl hover:bg-accent rounded p-1 transition-colors"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+              <div className="text-xs text-muted-foreground text-center mt-2 pt-2 border-t">
+                Click to insert emoji
+              </div>
+            </div>
+          )}
+          
           {/* Input Actions */}
           <div className="absolute right-2 bottom-2 flex gap-1">
             <Button
@@ -175,6 +274,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
               size="sm"
               className="h-8 w-8 p-0"
               disabled={disabled}
+              onClick={handleAttachmentClick}
+              title="Attach file"
             >
               <Paperclip className="h-4 w-4" />
             </Button>
@@ -184,6 +285,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
               size="sm"
               className="h-8 w-8 p-0"
               disabled={disabled}
+              onClick={toggleEmojiPicker}
+              title="Add emoji"
             >
               <Smile className="h-4 w-4" />
             </Button>

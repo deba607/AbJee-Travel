@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/components/ui/use-toast';
 import CreateRoomDialog from '@/components/chat/CreateRoomDialog';
 import { 
   MessageCircle, 
@@ -15,8 +14,7 @@ import {
   Users, 
   Crown, 
   MapPin,
-  Filter,
-  Settings
+  Filter
 } from 'lucide-react';
 import { chatAPI } from '@/lib/api';
 import socketService from '@/lib/socket';
@@ -59,42 +57,25 @@ const ChatPage: React.FC = () => {
   // Check if we're in a specific room
   const isInRoom = location.pathname.includes('/chat/room/');
 
-  useEffect(() => {
-    initializeChat();
-    loadRooms();
-  }, [activeTab]);
-
-  useEffect(() => {
-    // Extract room ID from URL
-    const roomMatch = location.pathname.match(/\/chat\/room\/(.+)/);
-    if (roomMatch) {
-      setSelectedRoom(roomMatch[1]);
-    } else {
-      setSelectedRoom(null);
-    }
-  }, [location.pathname]);
-
-  const initializeChat = async () => {
+  const initializeChat = useCallback(async () => {
     try {
       if (!currentUser) {
-        // Allow viewing chat page without authentication
-        // Users will need to login to participate in chats
         console.log('No user authenticated. Users can view but not participate in chats.');
         return;
       }
 
-      // Get Firebase ID token for backend authentication
-      const token = await currentUser.getIdToken();
-
+      // Socket connection is already handled by AuthContext
+      // Just verify it's connected
       if (!socketService.isConnected()) {
-        await socketService.connect(token);
+        console.log('[ChatPage] Socket not connected, will be handled by AuthContext');
       }
     } catch (error) {
       console.error('Failed to initialize chat:', error);
+      // Don't throw - allow the component to render even if initialization fails
     }
-  };
+  }, [currentUser]);
 
-  const loadRooms = async () => {
+  const loadRooms = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -141,12 +122,61 @@ const ChatPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser, activeTab]);
 
-  const handleRoomClick = (room: Room) => {
+  useEffect(() => {
+    const initChat = async () => {
+      if (currentUser) {
+        try {
+          // Set up token refresh callback
+          socketService.setTokenRefreshCallback(async () => {
+            const token = await currentUser.getIdToken(true);
+            return token;
+          });
+
+          await initializeChat();
+          await loadRooms();
+        } catch (error) {
+          console.error('Failed to initialize chat:', error);
+          // Don't redirect on error, just show error message
+          return;
+        }
+      } else {
+        // Only redirect if trying to access a room
+        if (location.pathname.includes('/chat/room/')) {
+          navigate('/auth', { state: { from: location.pathname } });
+        } else {
+          // Just load demo rooms for non-authenticated users
+          await loadRooms();
+        }
+      }
+    };
+
+    initChat();
+
+    // DON'T disconnect on unmount - let the socket persist across re-renders
+    // This prevents React StrictMode from creating multiple connections
+    return () => {
+      // Cleanup code if needed, but don't disconnect the socket
+      console.log('[ChatPage] Component unmounting, keeping socket connection alive');
+    };
+  }, [currentUser, activeTab, location.pathname, navigate, initializeChat, loadRooms]);
+
+  useEffect(() => {
+    // Extract room ID from URL
+    const roomMatch = location.pathname.match(/\/chat\/room\/(.+)/);
+    if (roomMatch) {
+      setSelectedRoom(roomMatch[1]);
+    } else {
+      setSelectedRoom(null);
+    }
+  }, [location.pathname]);
+
+  const handleRoomClick = async (room: Room) => {
     if (!currentUser) {
       // Show login prompt for unauthenticated users
       alert('Please login to join chat rooms. Click "Get Started" to create an account or login.');
+      navigate('/auth', { state: { from: `/chat/room/${room.id}` } });
       return;
     }
 
@@ -156,7 +186,13 @@ const ChatPage: React.FC = () => {
       return;
     }
 
-    navigate(`/chat/room/${room.id}`);
+    try {
+      // Socket connection is managed by AuthContext, just navigate
+      navigate(`/chat/room/${room.id}`);
+    } catch (error) {
+      console.error('Failed to access chat room:', error);
+      alert('Failed to connect to chat. Please try again.');
+    }
   };
 
   const handleCreateRoom = () => {
@@ -170,13 +206,18 @@ const ChatPage: React.FC = () => {
 
   const handleCreateRoomSubmit = async (roomData: RoomData) => {
     try {
+      if (!currentUser) {
+        throw new Error('You must be logged in to create a room');
+      }
+
       const response = await chatAPI.createRoom(roomData);
       const newRoom = response.data.data.room;
       setRooms(prev => [newRoom, ...prev]);
       navigate(`/chat/room/${newRoom.id}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create room:', error);
-      alert('Failed to create room. Please try again.');
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to create room. Please try again.';
+      alert(errorMessage);
     }
   };
 

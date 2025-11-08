@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import AuthMultiStepForm from '../components/auth/AuthMultiStepForm';
 import Header from '../components/mvpblocks/header-1';
 import { Button } from '../components/ui/button';
@@ -12,9 +12,11 @@ export default function AuthPage() {
   const { currentUser, userProfile, logout } = useAuth();
   const navigate = useNavigate();
 
+  const location = useLocation();
   const handleAuthComplete = () => {
-    // Redirect to chat page after successful authentication
-    navigate('/chat');
+    // Get the intended destination from location state, or fallback to chat page
+    const from = (location.state as any)?.from || '/chat';
+    navigate(from);
   };
 
   const handleLogout = async () => {
