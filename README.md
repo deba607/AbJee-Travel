@@ -1,4 +1,5 @@
-# ABjee Travel - Community Chat Platform
+
+# ABjee Travel
 
 A modern travel community platform with real-time chat functionality, built with React, Node.js, Socket.IO, and Firebase.
 
