@@ -22,9 +22,13 @@ const app = express();
 const server = createServer(app);
 
 // Socket.IO setup with CORS
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+  ? [process.env.CLIENT_URL, "https://your-frontend-domain.vercel.app"]
+  : ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"];
+
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -53,7 +57,7 @@ initializeFirestore();
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:5174", "http://localhost:5176"],
+  origin: allowedOrigins,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
