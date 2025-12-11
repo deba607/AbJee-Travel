@@ -1,0 +1,347 @@
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  updateProfile,
+  sendPasswordResetEmail,
+} from 'firebase/auth';
+import { auth, googleProvider } from '../lib/firebase';
+import socketService from '../lib/socket';
+
+interface AuthContextType {
+  currentUser: any | null;
+  userProfile: UserProfile | null;
+  loading: boolean;
+  signup: (email: string, password: string, additionalData?: any) => Promise<{ success: boolean; user: any }>;
+  login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
+}
+
+interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  firstName?: string;
+  lastName?: string;
+  photoURL?: string;
+  address?: string;
+  city?: string;
+  zipCode?: string;
+  username?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Helper to get fresh token
+  const refreshToken = useCallback(async (user = currentUser) => {
+    if (!user) throw new Error('No authenticated user');
+    try {
+      setIsRefreshing(true);
+      const token = await user.getIdToken(true);
+      localStorage.setItem('token', token);
+      return token;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      throw error;
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [currentUser]);
+
+  // Handle socket reconnection
+  const reconnectSocket = useCallback(async (token: string) => {
+    if (!socketService.isConnected()) {
+      try {
+        await socketService.connect(token);
+        console.log('Socket reconnected successfully');
+      } catch (error) {
+        console.error('Socket reconnection failed:', error);
+        // Don't throw - we'll retry on next token refresh
+      }
+    }
+  }, []);
+
+  // Create user profile via API
+  const createUserProfile = async (user: any, additionalData?: any) => {
+    if (!user) return;
+
+    try {
+      const token = await refreshToken(user);
+      
+      // Check if profile exists
+      const checkResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'}/api/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (checkResponse.ok) {
+        const { data } = await checkResponse.json();
+        setUserProfile(data.user);
+        return;
+      }
+
+      // Set basic profile data from Firebase user
+      const { displayName, email, photoURL } = user;
+      const newProfile = {
+        uid: user.uid,
+        email,
+        displayName: displayName || '',
+        photoURL: photoURL || '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...additionalData,
+      };
+
+      setUserProfile(newProfile);
+
+    } catch (error) {
+      console.error('Error creating user profile:', error);
+      throw error;
+    }
+  };
+
+  // Sign up with email and password
+  const signup = async (email: string, password: string, additionalData?: any) => {
+    try {
+      if (!email || !password) {
+        throw new Error('Email and password are required');
+      }
+
+      const { user } = await createUserWithEmailAndPassword(auth, email, password);
+      
+      if (additionalData?.firstName && additionalData?.lastName) {
+        const displayName = `${additionalData.firstName} ${additionalData.lastName}`;
+        await updateProfile(user, { displayName });
+        additionalData.displayName = displayName;
+      }
+
+      await createUserProfile(user, additionalData);
+      return { success: true, user };
+
+    } catch (error: any) {
+      console.error('Signup error:', error);
+      const errorMessages: Record<string, string> = {
+        'auth/email-already-in-use': 'This email is already registered. Please use a different email or sign in.',
+        'auth/weak-password': 'Password should be at least 6 characters.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+      };
+      throw new Error(errorMessages[error.code] || 'Failed to create account. Please try again.');
+    }
+  };
+
+  // Sign in with email and password
+  const login = async (email: string, password: string) => {
+    try {
+      const { user } = await signInWithEmailAndPassword(auth, email, password);
+      const token = await refreshToken(user);
+      localStorage.setItem('token', token);
+    } catch (error: any) {
+      console.error('Login error:', error);
+      const errorMessages: Record<string, string> = {
+        'auth/user-not-found': 'Invalid email or password.',
+        'auth/wrong-password': 'Invalid email or password.',
+        'auth/too-many-requests': 'Too many failed login attempts. Please try again later.',
+      };
+      throw new Error(errorMessages[error.code] || 'Failed to log in. Please try again.');
+    }
+  };
+
+  // Sign in with Google
+  const loginWithGoogle = async () => {
+    try {
+      const { user } = await signInWithPopup(auth, googleProvider);
+      const token = await refreshToken(user);
+      localStorage.setItem('token', token);
+      await createUserProfile(user);
+    } catch (error: any) {
+      console.error('Google login error:', error);
+      const errorMessages: Record<string, string> = {
+        'auth/popup-closed-by-user': 'Sign in cancelled. Please try again.',
+        'auth/popup-blocked': 'Popup blocked. Please allow popups for this site.',
+        'auth/cancelled-popup-request': 'Sign in cancelled. Please try again.',
+      };
+      throw new Error(errorMessages[error.code] || 'Failed to sign in with Google. Please try again.');
+    }
+  };
+
+  // Sign out
+  const logout = useCallback(async () => {
+    try {
+      socketService.disconnect();
+      await signOut(auth);
+      setUserProfile(null);
+      localStorage.removeItem('token');
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
+  }, []);
+
+  // Reset password
+  const resetPassword = async (email: string) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (error: any) {
+      console.error('Password reset error:', error);
+      const errorMessages: Record<string, string> = {
+        'auth/user-not-found': 'No account found with this email address.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+        'auth/too-many-requests': 'Too many requests. Please try again later.',
+      };
+      throw new Error(errorMessages[error.code] || 'Failed to send password reset email. Please try again.');
+    }
+  };
+
+  // Update user profile
+  const updateUserProfile = async (data: Partial<UserProfile>) => {
+    if (!currentUser) return;
+
+    try {
+      const token = await refreshToken();
+      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'}/api/users/profile`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
+
+      const { data: updatedUser } = await response.json();
+      setUserProfile(updatedUser);
+    } catch (error) {
+      console.error('Error updating user profile:', error);
+      throw error;
+    }
+  };
+
+  // Listen for auth state changes and manage socket connection
+  useEffect(() => {
+    let isActive = true;
+    let refreshInterval: NodeJS.Timeout | null = null;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!isActive) return;
+      
+      try {
+        setCurrentUser(user);
+      
+        if (user) {
+          // Set up token refresh callback for socket
+          socketService.setTokenRefreshCallback(async () => {
+            const token = await refreshToken(user);
+            return token;
+          });
+
+          const token = await refreshToken(user);
+          
+          // Initial socket connection
+          if (!socketService.isConnected()) {
+            await socketService.connect(token).catch(error => {
+              console.error('Initial socket connection failed:', error);
+            });
+          }
+
+          // Set up periodic token refresh (30 minutes)
+          refreshInterval = setInterval(async () => {
+            if (!isActive || isRefreshing) return;
+            try {
+              const freshToken = await refreshToken(user);
+              // Socket service will use the refresh callback if needed
+              if (socketService.isConnected()) {
+                // Just refresh the token, don't reconnect
+                localStorage.setItem('token', freshToken);
+              }
+            } catch (error) {
+              console.error('Periodic token refresh failed:', error);
+            }
+          }, 1000 * 60 * 30); // 30 minutes
+
+          // Load user profile
+          try {
+            const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'}/api/auth/me`, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+              },
+            });
+
+            if (response.ok) {
+              const { data } = await response.json();
+              if (isActive) setUserProfile(data.user);
+            } else {
+              await createUserProfile(user);
+            }
+          } catch (error) {
+            console.error('Error loading user profile:', error);
+            await createUserProfile(user);
+          }
+        } else {
+          if (isActive) {
+            setUserProfile(null);
+            localStorage.removeItem('token');
+            socketService.disconnect();
+          }
+        }
+      } catch (error) {
+        console.error('Auth state change error:', error);
+      } finally {
+        if (isActive) setLoading(false);
+      }
+    });
+
+    return () => {
+      isActive = false;
+      unsubscribe();
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      socketService.disconnect();
+    };
+  }, [refreshToken, isRefreshing]);
+
+  const value: AuthContextType = {
+    currentUser,
+    userProfile,
+    loading,
+    signup,
+    login,
+    loginWithGoogle,
+    logout,
+    resetPassword,
+    updateUserProfile,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+}
