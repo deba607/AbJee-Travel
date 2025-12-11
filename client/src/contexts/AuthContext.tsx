@@ -70,19 +70,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser]);
 
-  // Handle socket reconnection
-  const reconnectSocket = useCallback(async (token: string) => {
-    if (!socketService.isConnected()) {
-      try {
-        await socketService.connect(token);
-        console.log('Socket reconnected successfully');
-      } catch (error) {
-        console.error('Socket reconnection failed:', error);
-        // Don't throw - we'll retry on next token refresh
-      }
-    }
-  }, []);
-
   // Create user profile via API
   const createUserProfile = async (user: any, additionalData?: any) => {
     if (!user) return;

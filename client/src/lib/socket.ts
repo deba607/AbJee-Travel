@@ -33,7 +33,6 @@ class SocketService implements ISocketService {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private onTokenRefreshNeeded: (() => Promise<string>) | null = null;
   private connectionPromise: Promise<void> | null = null;
-  private connecting = false;
   private connectionTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastError: Error | null = null;
   private eventListeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -73,7 +72,6 @@ class SocketService implements ISocketService {
   }
 
   private cleanup(): void {
-    this.connecting = false;
     this.connectionPromise = null;
     
     if (this.connectionTimeout) {
@@ -166,7 +164,6 @@ class SocketService implements ISocketService {
 
     // Acquire connection lock
     this.connectionLock = true;
-    this.connecting = true;
     this.lastError = null;
     this.disconnectRequested = false;
 
@@ -345,44 +342,6 @@ class SocketService implements ISocketService {
 
   getLastError(): Error | null {
     return this.lastError;
-  }
-
-  private async waitForConnection(timeoutMs = 5000): Promise<void> {
-    if (this.socket?.connected) return;
-
-    return new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        cleanup();
-        reject(new Error('Connection timeout'));
-      }, timeoutMs);
-
-      const onConnect = () => {
-        cleanup();
-        resolve();
-      };
-
-      const onConnectError = (error: Error) => {
-        cleanup();
-        reject(error);
-      };
-
-      const cleanup = () => {
-        clearTimeout(timeout);
-        if (this.socket) {
-          this.socket.off('connect', onConnect);
-          this.socket.off('connect_error', onConnectError);
-        }
-      };
-
-      if (!this.socket) {
-        cleanup();
-        reject(new Error('No socket instance available'));
-        return;
-      }
-
-      this.socket.once('connect', onConnect);
-      this.socket.once('connect_error', onConnectError);
-    });
   }
 
   private async ensureConnected(): Promise<void> {
