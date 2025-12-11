@@ -37,7 +37,8 @@ try {
   // Initialize Firebase Admin
   console.log('[Firebase-Admin] Initializing app with service account');
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.appspot.com`
   });
   console.log('[Firebase-Admin] Firebase Admin SDK initialized successfully');
 
@@ -53,5 +54,9 @@ try {
   });
   process.exit(1); // Exit if we can't initialize Firebase Admin
 }
+
+export const auth = admin.auth();
+export const db = admin.firestore();
+export const storage = admin.storage();
 
 export default admin;
