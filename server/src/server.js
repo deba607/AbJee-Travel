@@ -23,8 +23,16 @@ const server = createServer(app);
 
 // Socket.IO setup with CORS
 const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? [process.env.CLIENT_URL, "https://abjee-travels.netlify.app"]
-  : ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"];
+  ? [
+      "https://abjee-travels.netlify.app",
+      process.env.CLIENT_URL
+    ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i) // Remove undefined and duplicates
+  : [
+      "http://localhost:5173", 
+      "http://localhost:5174", 
+      "http://localhost:5175", 
+      "http://localhost:5176"
+    ];
 
 const io = new Server(server, {
   cors: {
@@ -113,7 +121,10 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 ABjee Travel Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📡 Socket.IO enabled with CORS origin: ${process.env.CLIENT_URL}`);
+  console.log(`📡 Socket.IO enabled with CORS origins:`, allowedOrigins);
+  console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`📊 Database: ${process.env.MONGODB_URI ? 'Connected' : 'Not configured'}`);
+  console.log(`🔥 Firebase: Firestore initialized`);
 });
 
 export default app;
