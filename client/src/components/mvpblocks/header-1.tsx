@@ -19,28 +19,35 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Home', href: '/' },
-  { name: 'Features', href: '#features' },
-  {
-    name: 'Booking',
-    href: '',
-    hasDropdown: true,
-    dropdownItems: [
-      {
-        name: 'Hotel/Hostels',
-        href: '/hotel-bookings',
-        description: 'Book Your Hotel Now',
-      },
-      {
-        name: 'Tour Packages',
-        href: '/',
-        description: 'Tour Packages with Customization',
-      },
-      { name: 'Bike/Car Rents',
-        href: '/',
-         description: 'Book bike/car rent' },
-    ],
-  },
+  // { name: 'Hotel/Hostel  Booking', href: '#hotel_booking' },
+  // { name: ' Bike/Car Rentals', href: '#hotel_booking' },
+  // { name: 'Customised Tour Packages', href: '#hotel_booking' },
   { name: 'Community', href: '/chat' },
+  { name: 'Booking Categories', href: '/booking-categories' },
+  // {
+  //   name: 'Booking',
+  //   href: '',
+  //   hasDropdown: true,
+  //   dropdownItems: [
+  //     {
+  //       name: 'Hotel/Hostels or Tour Packages',
+  //       href: '/hotel-booking',
+  //       description: '🏨✈️ Book Custom Hotel & Tour Packages in One Click',
+  //     },
+  //     // {
+  //     //   name: 'Tour Packages',
+  //     //   href: '/',
+  //     //   description: 'Tour Packages with Customization',
+  //     // },
+      
+  //     { name: 'Car Rents',
+  //       href: '/car-rentals',
+  //        description: 'Car Rentals' },
+  //     { name: 'Bike Rents',
+  //       href: '/bike-rentals',
+  //        description: 'Book Your Personal Bike' },
+  //   ],
+  // },
   { name: 'About', href: '/' },
   { name: 'Pricing', href: '#pricing' },
 ];
@@ -118,8 +125,8 @@ export default function Header1() {
             transition={{ type: 'spring', stiffness: 400, damping: 10 }}
           >
             <Link to="/" className="flex items-center space-x-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-rose-500 to-rose-700">
-                <Sparkles className="h-5 w-5 text-white" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
+                <img src="/logo.jpg" alt="ABjee Travel" className="h-8 w-8 object-cover" />
               </div>
               <span className="bg-gradient-to-r from-rose-500 to-rose-700 bg-clip-text text-xl font-bold text-transparent">
                 ABjee Travel
@@ -174,7 +181,7 @@ export default function Header1() {
                   <AnimatePresence>
                     {activeDropdown === item.name && (
                       <motion.div
-                        className="absolute left-0 top-full mt-2 w-64 overflow-hidden rounded-xl border border-border bg-background/95 shadow-xl backdrop-blur-lg"
+                        className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-100 overflow-hidden rounded-xl border border-border bg-background/95 shadow-xl backdrop-blur-lg"
                         variants={dropdownVariants}
                         initial="hidden"
                         animate="visible"
@@ -186,6 +193,7 @@ export default function Header1() {
                             key={dropdownItem.name}
                             to={dropdownItem.href}
                             className="block px-4 py-3 transition-colors duration-200 hover:bg-muted"
+                            onClick={() => setActiveDropdown(null)}
                           >
                             <div className="font-medium text-foreground">
                               {dropdownItem.name}
@@ -306,6 +314,22 @@ export default function Header1() {
                     >
                       {item.name}
                     </a>
+                  ) : item.hasDropdown ? (
+                    <div key={item.name} className="px-4 py-2">
+                      <div className="font-medium text-foreground mb-2">{item.name}</div>
+                      <div className="pl-4 space-y-1">
+                        {item.dropdownItems?.map((dropdownItem) => (
+                          <Link
+                            key={dropdownItem.name}
+                            to={dropdownItem.href}
+                            className="block py-2 text-sm text-muted-foreground transition-colors duration-200 hover:text-rose-500"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                          >
+                            {dropdownItem.name}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
                   ) : (
                     <Link
                       key={item.name}
