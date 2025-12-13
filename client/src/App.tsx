@@ -6,8 +6,14 @@ import LandingPage from './Pages/LandingPage'
 import ChatPage from './Pages/ChatPage';
 import AuthPage from './Pages/AuthPage';
 import ChatRoom from './components/chat/ChatRoom';
-import HotelBookings from './components/bookings/hotel_booking';
 import {BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom'
+import HotelList from './components/bookings/hotel_list';
+import CabBooking from './components/bookings/cab_booking';
+import CarRental from './components/bookings/car_rental';
+import BikeRental from './components/bookings/bike_rental';
+import AddHotel from './components/bookings/add_hotel';
+
+import BookingCategories from './components/bookings/booking_categories';
 
 
 function App() {
@@ -30,7 +36,12 @@ function App() {
                 <Link to="/chat">Go to Chat</Link>
               </div>
             } />
-            <Route path = '/hotel-bookings' element = {<HotelBookings/>}/>
+           <Route path='/booking-categories' element={<BookingCategories/>}></Route>
+            <Route path='/hotel-list' element={<HotelList/>}></Route>
+            <Route path='/cab-booking' element={<CabBooking/>}></Route>
+            <Route path='/car-rental' element={<CarRental/>}></Route>
+            <Route path='/bike-rental' element={<BikeRental/>}></Route>
+            <Route path='/add-hotel' element={<AddHotel/>}></Route>
             {/* <Route path="/about" element={<div><AboutPage /></div>} /> */}
             {/* <Route path="/contact" element={<ContactPage />} /> */}
           </Routes>

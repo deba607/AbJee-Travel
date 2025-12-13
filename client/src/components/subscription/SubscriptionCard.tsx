@@ -47,7 +47,6 @@ const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
   const isCurrentPlan = currentPlan === plan.type;
   const isUpgrade = currentPlan === 'free' && plan.type !== 'free';
   
-  const price = isYearly && plan.yearlyPrice ? plan.yearlyPrice : plan.price;
   const monthlyPrice = isYearly && plan.yearlyPrice 
     ? Math.round(plan.yearlyPrice.amount / 12) 
     : plan.price.amount;
