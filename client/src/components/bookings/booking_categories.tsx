@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import Header1 from '../mvpblocks/header-1';
 import Footer4Col from '../mvpblocks/footer-4col';
 import { GroupToursPopup } from './GroupToursPopup';
-import Header2 from '../mvpblocks/header-2';
+import Header2 from '../mvpblocks/Header-2';
 import GradientTypewriter from '../mvpblocks/gradient-typewriter';
 
 // --- TYPE DEFINITIONS ---
