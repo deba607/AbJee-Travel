@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { RoomData } from '../types/chat';
 
-const API_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env. || 'http://localhost:5000';
 
 // Create axios instance
 const api = axios.create({

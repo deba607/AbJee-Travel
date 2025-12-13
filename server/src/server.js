@@ -23,7 +23,7 @@ const server = createServer(app);
 
 // Socket.IO setup with CORS
 const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? [process.env.CLIENT_URL, "https://your-frontend-domain.vercel.app"]
+  ? [process.env.CLIENT_URL, "https://abjee-travels.netlify.app"]
   : ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"];
 
 const io = new Server(server, {
