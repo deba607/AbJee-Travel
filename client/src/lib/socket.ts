@@ -229,7 +229,10 @@ class SocketService implements ISocketService {
         rejectUnauthorized: false // Only for development with self-signed certs
       };
       
-      this.socket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:5000', socketOptions);
+      const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+      console.log('[Socket] Connecting to server:', serverUrl);
+      
+      this.socket = io(serverUrl, socketOptions);
 
       // Set up event listeners
       this.setupEventListeners(resolve, reject);
@@ -273,7 +276,9 @@ class SocketService implements ISocketService {
     });
 
     this.socket.on('connect', () => {
-      console.log('Connected to server');
+      console.log('[Socket] ✅ Connected to server');
+      console.log('[Socket] Socket ID:', this.socket?.id);
+      console.log('[Socket] Transport:', (this.socket as any)?.io.engine.transport.name);
       this.reconnectAttempts = 0;
       this.cleanup();
       resolve();

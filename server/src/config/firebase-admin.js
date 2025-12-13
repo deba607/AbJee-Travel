@@ -25,8 +25,16 @@ try {
   // If file doesn't exist, try environment variables
   else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     console.log('[Firebase-Admin] Loading service account from environment variable');
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    console.log('[Firebase-Admin] Service account loaded from env');
+    try {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      console.log('[Firebase-Admin] Service account loaded from env:', {
+        projectId: serviceAccount.project_id,
+        clientEmail: serviceAccount.client_email
+      });
+    } catch (parseError) {
+      console.error('[Firebase-Admin] Failed to parse FIREBASE_SERVICE_ACCOUNT:', parseError);
+      throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable contains invalid JSON');
+    }
   } 
   // If neither exists, throw error
   else {

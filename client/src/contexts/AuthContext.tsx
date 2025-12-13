@@ -160,16 +160,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sign in with Google
   const loginWithGoogle = async () => {
     try {
-      const { user } = await signInWithPopup(auth, googleProvider);
+      console.log('[Auth] Initiating Google Sign-In...');
+      const result = await signInWithPopup(auth, googleProvider);
+      const { user } = result;
+      
+      console.log('[Auth] Google Sign-In successful, getting token...');
       const token = await refreshToken(user);
       localStorage.setItem('token', token);
+      
+      console.log('[Auth] Creating/updating user profile...');
       await createUserProfile(user);
+      
+      console.log('[Auth] Google Sign-In complete');
     } catch (error: any) {
-      console.error('Google login error:', error);
+      console.error('[Auth] Google login error:', error);
+      console.error('[Auth] Error code:', error.code);
+      console.error('[Auth] Error message:', error.message);
+      
       const errorMessages: Record<string, string> = {
         'auth/popup-closed-by-user': 'Sign in cancelled. Please try again.',
         'auth/popup-blocked': 'Popup blocked. Please allow popups for this site.',
         'auth/cancelled-popup-request': 'Sign in cancelled. Please try again.',
+        'auth/unauthorized-domain': 'This domain is not authorized. Please contact support.',
+        'auth/operation-not-allowed': 'Google Sign-In is not enabled. Please contact support.',
       };
       throw new Error(errorMessages[error.code] || 'Failed to sign in with Google. Please try again.');
     }
