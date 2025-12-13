@@ -25,6 +25,6 @@ services:
       - key: RATE_LIMIT_MAX_REQUESTS
         value: 100
       - key: CLIENT_URL
-        sync: false
+        value: https://abjee-travels.netlify.app
       - key: MONGODB_URI
         sync: false

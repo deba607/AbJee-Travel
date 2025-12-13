@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Header1 from '../mvpblocks/header-1';
-import Header2 from '../mvpblocks/header-2';
+import Header2 from '../mvpblocks/Header-2';
 
 interface Cab {
     id: number;
